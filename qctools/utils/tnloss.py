@@ -191,5 +191,5 @@ class LocalSumTNLoss(TNLoss):
             rho = circ.partial_trace(sites)
             ind = int(local_target, 2)
             res += torch.abs(rho[ind, ind])
-        return res
+        return -res
             
