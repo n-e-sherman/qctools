@@ -19,6 +19,6 @@ This package is designed to aid in constructing, simulating, and training quantu
 Clone the repository and install the package in editable mode:
 
 ```bash
-git clone https://github.com/<your-github-username>/qctools.git
+git clone https://github.com/n-e-sherman/qctools.git
 cd qctools
 pip install -e .

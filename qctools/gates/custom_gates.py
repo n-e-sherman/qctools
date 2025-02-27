@@ -50,6 +50,19 @@ class SV4CutGate(ThreeUThreeGGate):
             self._name = "SV4CUT"
             self.register_gate()
 
+class HaarCZGate(OneUOneGGate):
+
+    def __init__(self, distribution: str="uniform", dist_params: Tuple=[0.0, 2*np.pi], to_backend: Optional[Callable] = None, rename: bool=True):
+
+        U1 = Haar2Gate(distribution=distribution, dist_params=dist_params, to_backend=to_backend)
+        U2 = Haar2Gate(distribution=distribution, dist_params=dist_params, to_backend=to_backend)
+        G12 = CZGate(distribution=distribution, dist_params=dist_params, to_backend=to_backend)
+        super().__init__(U1, U2, G12, distribution=distribution, dist_params=dist_params, to_backend=to_backend)
+
+        if rename:
+            self._name = 'HAARCZSTACK'
+            self.register_gate()
+
 class HaarCZStackGate(ThreeUTwoGGate):
 
     def __init__(self, distribution: str="uniform", dist_params: Tuple=[0.0, 2*np.pi], to_backend: Optional[Callable] = None, rename: bool=True):

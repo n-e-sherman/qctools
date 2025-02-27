@@ -10,7 +10,11 @@ setup(
         "qiskit",
         "numpy",
         "uuid",
-        "mlflow"
+        "mlflow",
+        "optuna",
+        "cmaes",
+        "nevergrad",
+        "kahypar"
     ],
     author="Nick Sherman",
     description="A collection of tools for studying quantum circuits with Quimb.",
