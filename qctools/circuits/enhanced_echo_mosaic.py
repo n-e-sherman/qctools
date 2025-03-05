@@ -36,6 +36,9 @@ class EnhancedEchoMosaicCircuitManager(EchoMosaicCircuitManager):
                  tol: float=1e-8,
                  identity_tol: float=1e-7,
                  identity_attempts: int=20,
+                 oqc_tol: Optional[float] = None,
+                 oqc_identity_tol: Optional[float]=None,
+                 oqc_identity_attempts: Optional[int]=None, 
                  gauge: bool=True,
                  gauge_inds: Tuple[int]=(0, 0), 
                  alpha_thresh:float=1e-7,
@@ -51,6 +54,7 @@ class EnhancedEchoMosaicCircuitManager(EchoMosaicCircuitManager):
                          gate=gate, gate_o=gate_o, gate_i=gate_i, gate_e=gate_e,
                          pbc=pbc, pbc_o=pbc_o, pbc_i=pbc_i, pbc_e=pbc_e, shift=shift,
                          epochs=epochs, tol=tol, identity_tol=identity_tol, identity_attempts=identity_attempts,
+                         oqc_tol=oqc_tol, oqc_identity_tol=oqc_identity_tol, oqc_identity_attempts=oqc_identity_attempts,
                          gauge=gauge, gauge_inds=gauge_inds, alpha_thresh=alpha_thresh, progbar=progbar,
                          qasm=qasm, to_backend=to_backend, to_frontend=to_frontend)
 

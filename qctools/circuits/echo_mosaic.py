@@ -33,6 +33,10 @@ class EchoMosaicCircuitManager(CircuitManager):
                  tol: float=1e-8,
                  identity_tol: float=1e-7,
                  identity_attempts: int=20,
+                 oqc_tol: Optional[float] = None,
+                 oqc_identity_tol: Optional[float]=None,
+                 oqc_identity_attempts: Optional[int]=None, 
+
                  gauge: bool=True,
                  gauge_inds: Tuple[int]=(0, 0), 
                  alpha_thresh:float=1e-7,
@@ -72,6 +76,9 @@ class EchoMosaicCircuitManager(CircuitManager):
         self.tol=tol
         self.identity_tol=identity_tol
         self.identity_attempts=identity_attempts
+        self.oqc_tol = oqc_tol if oqc_tol is not None else tol
+        self.oqc_identity_tol = oqc_identity_tol if oqc_identity_tol is not None else identity_tol
+        self.oqc_identity_attempts = oqc_identity_attempts if oqc_identity_attempts is not None else identity_attempts
         self.gauge=gauge
         self.gauge_inds=gauge_inds
         self.alpha_thresh=alpha_thresh
@@ -147,7 +154,7 @@ class EchoMosaicCircuitManager(CircuitManager):
         for d in range(self.tau_o):
             for i in range((d+self.shift_o)%2, self.N-1+int(self.pbc_o), 2):
 
-                for attempt in range(self.identity_attempts):
+                for attempt in range(self.oqc_identity_attempts):
                     params = self.gate_o.random_params()
                     _qc = qtn.Circuit(2)
                     _qc.apply_gate(self.gate_o.name, params=params, qubits=[0, 1], parametrize=True)
@@ -164,11 +171,11 @@ class EchoMosaicCircuitManager(CircuitManager):
                             progbar=self.progbar,
                             callback=lambda opt: self._update_progbar_callback(opt, msg)
                         )
-                        _qc_opt = opt.optimize(self.epochs, self.tol)
+                        _qc_opt = opt.optimize(self.epochs, self.oqc_tol)
 
-                    if opt.loss < self.identity_tol:
+                    if opt.loss < self.oqc_identity_tol:
                         break
-                    elif attempt == self.identity_attempts:
+                    elif attempt == self.oqc_identity_attempts:
                         raise RuntimeError(f"gate {i+1} in OQC did not converge in {self.identity_attempts} attempts.")
 
                 _qc_gate = _qc_opt.gates[0]
