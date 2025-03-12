@@ -1,4 +1,4 @@
-from mongoengine import EmbeddedDocument, FloatField, StringField
+from mongoengine import EmbeddedDocument, FloatField, StringField, BooleanField
 
 class PeakMetric(EmbeddedDocument):
 
@@ -6,6 +6,7 @@ class PeakMetric(EmbeddedDocument):
     peak = FloatField()
     variant = StringField() # used to check if this metric has already been computed
     comment = StringField()
+    peak_found = BooleanField(default=False)
     device = StringField(default='cpu')
 
     meta = {'allow_inheritance': True}

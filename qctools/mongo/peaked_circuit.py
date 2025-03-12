@@ -34,9 +34,10 @@ class PeakedCircuit(Document):
 
     def update_best_peak_metric(self):
 
-        times = [metric.time for metric in self.peak_metrics]
-        i_best = np.argmin(times)
-        self.best_peak_metric = self.peak_metrics[i_best]
+        times = [metric.time for metric in self.peak_metrics if metric.peak_found==True]
+        if len(times) > 0:
+            i_best = np.argmin(times)
+            self.best_peak_metric = self.peak_metrics[i_best]
 
     def to_df(self, skips = []):
 
