@@ -1,7 +1,10 @@
+import copy
 import torch
+import pandas as pd
 import quimb.tensor as qtn
-
 from typing import Tuple
+
+from .lambdas import TorchConverter
 
 def i_to_b(index, num_qubits, order="big"):
     """Convert an integer index to a bitstring of a given length, with optional ordering.
@@ -74,3 +77,69 @@ def gauge_tensor_loss(circ: qtn.Circuit, target: torch.Tensor,
 def bitstring_loss(circ: qtn.Circuit, target: str):
 
     return -torch.abs(circ.amplitude(target))**2
+
+def mlflow_runs_to_df(all_runs):
+
+    df_all = pd.DataFrame()
+
+    print("total runs:", len(all_runs))
+    for i, run in enumerate(all_runs):
+        print(i, end='\r')
+        
+        run_dict = run.to_dictionary()
+        run_dict.keys()
+        
+        res_dict = {}
+        res_dict.update(run_dict['info'])
+        
+        # res_dict.update(run_dict['inputs'])
+        for key, data in run_dict['data'].items():
+            if key == "params":
+                if "loss" in data:
+                    data["loss_fn"] = data.pop("loss")
+            res_dict.update(data)
+            
+        
+        _df = pd.DataFrame([res_dict])
+        df_all = pd.concat([df_all, _df])
+
+
+    # update dtypes
+    for column in df_all.columns:
+        if column == 'target':
+            continue
+        try:
+            df_all[column] = pd.to_numeric(df_all[column])
+        except:
+            pass
+    df_all = df_all.convert_dtypes()
+    return df_all
+
+
+
+
+def qiskit_to_quimb(qc_qiskit, converter = TorchConverter()):
+
+    QISKIT_TO_QUIMB = {
+        'cz': 'CZ',
+        'x': 'X',
+        'sx': 'X_1_2',
+        'rz': 'RZ',
+        'u3': 'U3',
+        'cx': 'CX'
+    }
+
+    qc = qtn.Circuit(qc_qiskit.num_qubits)
+    qc.apply_to_arrays(converter)
+    q_to_i = {q:i for i,q in enumerate(qc_qiskit.qubits)}
+    for i, instruction in enumerate(qc_qiskit.data):
+            
+        if instruction.name == 'measure': # ignore measure instructions
+            continue
+    
+        gate = QISKIT_TO_QUIMB[instruction.operation.name]
+        qubits = [q_to_i[q] for q in instruction.qubits]
+        params = instruction.operation.params
+        qc.apply_gate(gate, *converter(params), *qubits)
+
+    return qc
