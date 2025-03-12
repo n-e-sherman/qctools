@@ -53,7 +53,7 @@ class PeakedCircuit(Document):
 
             elif isinstance(v, dict):
                 if k == 'best_peak_metric':
-                    new_v = {f'best_{_k}': _v for _k, _v in v.items()}
+                    new_v = {f'best_{_k}': _v for _k, _v in v.items() if not _k == 'probabilities'}
                     res_dict.update(new_v)
                     continue
                 else:
