@@ -134,12 +134,12 @@ def qiskit_to_quimb(qc_qiskit, converter = TorchConverter()):
     q_to_i = {q:i for i,q in enumerate(qc_qiskit.qubits)}
     for i, instruction in enumerate(qc_qiskit.data):
             
-        if instruction.name == 'measure': # ignore measure instructions
+        if instruction.name in ['measure', 'barrier']: # ignore measure instructions
             continue
     
-        gate = QISKIT_TO_QUIMB[instruction.operation.name]
+        gate = QISKIT_TO_QUIMB.get(instruction.operation.name, instruction.operation.name.upper())
         qubits = [q_to_i[q] for q in instruction.qubits]
-        params = instruction.operation.params
-        qc.apply_gate(gate, *converter(params), *qubits)
+        params = converter(instruction.operation.params)
+        qc.apply_gate(gate, params=params, qubits=qubits)
 
     return qc

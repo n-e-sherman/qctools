@@ -5,37 +5,43 @@ import numpy as np
 import quimb as qu
 import quimb.tensor as qtn
 from quimb.tensor.optimize import TNOptimizer
-from typing import Union, Tuple, Callable, Iterable, Optional, Dict
-
-from ._base import CircuitManager
-
-from qctools.gates import Gate, Haar4Gate
+from qctools.gates import Gate, Haar4Gate, HaarCZMinimalStackGate
 from qctools.utils import GaugeTensorTNLoss
 
+from typing import Union, Tuple, Callable, Iterable, Optional, Dict, Any, List
+
+from ._base import CircuitManager
+from qctools.mosaics import Mosaic
 
 class EchoMosaicCircuitManager(CircuitManager):
 
-    def __init__(self, N, 
-                 tau_r, 
-                 tau_o: int=1, # defaults to 1
-                 tau_i: Optional[int]=None, # defaults to tau_r
-                 tau_e: int=0, # defaults to 0
-                 gate: Gate=Haar4Gate(), 
+    def __init__(self, N, echo_mosaic: Mosaic, oqc_mosaic: Optional[Mosaic]=None,
+                 tau_r: Optional[int]=None, 
+                 tau_p: Optional[int]=None,
+
+                 gate: Gate=HaarCZMinimalStackGate(), 
+                 gate_r: Optional[Gate]=None,
+                 gate_p: Optional[Gate]=None,
+                 gate_echo: Optional[Gate]=None,
+                 gate_echo_r: Optional[Gate]=None,
+                 gate_echo_p: Optional[Gate]=None,
                  gate_o: Optional[Gate]=None,
-                 gate_i: Optional[Gate]=None,
-                 gate_e: Optional[Gate]=None,
-                 pbc: bool=False, 
-                 pbc_o: Optional[bool]=None, 
-                 pbc_i: Optional[bool]=None, 
-                 pbc_e: Optional[bool]=None,
-                 shift: int=0,
-                 epochs: int=500,
-                 tol: float=1e-8,
-                 identity_tol: float=1e-7,
-                 identity_attempts: int=20,
-                 oqc_tol: Optional[float] = None,
-                 oqc_identity_tol: Optional[float]=None,
-                 oqc_identity_attempts: Optional[int]=None, 
+
+                 pbc: bool=True, 
+                 pbc_r: Optional[bool]=None, 
+                 pbc_p: Optional[bool]=None,
+
+                 echo_epochs: int=2000,
+                 echo_rel_tol: float=1e-10,
+                 echo_tol: float=1e-8,
+                 echo_attempts: int=50,
+                 echo_build_options: Dict[Any, Any]={},
+                 
+                 oqc_epochs: int=1000,
+                 oqc_rel_tol: float=1e-7,
+                 oqc_tol: float=1e-5,
+                 oqc_attempts: int=20,
+                 oqc_build_options: Dict[Any, Any]={},
 
                  gauge: bool=True,
                  gauge_inds: Tuple[int]=(0, 0), 
@@ -45,40 +51,52 @@ class EchoMosaicCircuitManager(CircuitManager):
                  to_backend: Optional[Callable]=None,
                  to_frontend: Optional[Callable]=None,
     ):
-
+        
         super().__init__(qasm=qasm, to_backend=to_backend, to_frontend=to_frontend)
 
         self.N = N
+        self.echo_mosaic = echo_mosaic
+        self.oqc_mosaic = oqc_mosaic
 
-        self.tau_r = tau_r
-        self.tau_o = tau_o
-        self.tau_i = tau_i if tau_i is not None else tau_r
-        self.tau_e = tau_e
-        self.tau_p = self.tau_o + self.tau_i + self.tau_e
-        if not (tau_o % 2) == 1:
-            warnings.warn(f"brickwall pattern is broken when tau_o is even, and tau_o={tau_o} was given.")
+        self.tau_r = tau_r if tau_r is not None else 0
+        self.tau_p = tau_p if tau_p is not None else 0
+
+        if (tau_r % 2) == 1:
+            warnings.warn(f"brickwall pattern is broken when tau_r is odd, and {tau_r} was given.")
+
+        if oqc_mosaic and (not (oqc_mosaic.T % 2) == 1):
+            warnings.warn(f"brickwall pattern is broken when oqc_mosaic depth is even, and {oqc_mosaic.T} was given.")
 
         self.pbc = pbc
-        self.pbc_o = pbc_o if pbc_o is not None else pbc
-        self.pbc_i = pbc_i if pbc_i is not None else pbc
-        self.pbc_e = pbc_e if pbc_e is not None else pbc
-
-        self.shift = shift
-        self.shift_o = (shift+tau_r)%2
-        self.shift_e = (self.shift_o + tau_r + 1)%2
+        self.pbc_r = pbc_r if pbc_r is not None else pbc
+        self.pbc_p = pbc_p if pbc_p is not None else pbc
+        
+        
+        self.shift_echo_r = echo_mosaic.shift_r # might not be needed
+        self.shift_echo_p = echo_mosaic.shift
+        self.shift_o = oqc_mosaic.shift
+        
+        self.shift_r = (self.shift_echo_r - (self.tau_r%2))%2
+        self.shift_p = 1 - self.shift_echo_r
 
         self.gate = gate
+        self.gate_r = gate_r if gate_r is not None else gate
+        self.gate_echo = gate_echo if gate_echo is not None else gate
+        self.gate_echo_r = gate_echo_r if gate_echo_r is not None else self.gate_echo
+        self.gate_echo_p = gate_echo_p if gate_echo_p is not None else self.gate_echo
         self.gate_o = gate_o if gate_o is not None else gate
-        self.gate_i = gate_i if gate_i is not None else gate
-        self.gate_e = gate_e if gate_e is not None else gate
+        self.gate_p = gate_p if gate_p is not None else gate
 
-        self.epochs=epochs
-        self.tol=tol
-        self.identity_tol=identity_tol
-        self.identity_attempts=identity_attempts
-        self.oqc_tol = oqc_tol if oqc_tol is not None else tol
-        self.oqc_identity_tol = oqc_identity_tol if oqc_identity_tol is not None else identity_tol
-        self.oqc_identity_attempts = oqc_identity_attempts if oqc_identity_attempts is not None else identity_attempts
+        self.echo_epochs = echo_epochs
+        self.echo_rel_tol = echo_rel_tol
+        self.echo_tol = echo_tol
+        self.echo_attempts = echo_attempts
+
+        self.oqc_epochs = oqc_epochs
+        self.oqc_rel_tol = oqc_rel_tol
+        self.oqc_tol = oqc_tol
+        self.oqc_attempts = oqc_attempts
+
         self.gauge=gauge
         self.gauge_inds=gauge_inds
         self.alpha_thresh=alpha_thresh
@@ -86,184 +104,256 @@ class EchoMosaicCircuitManager(CircuitManager):
 
         frame = inspect.currentframe()
         args, vargs, varkw, locals = inspect.getargvalues(frame)
-        skip_kwargs = ['self', 'frame', 'to_backend', 'to_frontend', 'gate', 'gate_o', 'gate_i', 'gate_e', 'progbar']
+        skip_kwargs = ['self', 'frame', 'to_backend', 'to_frontend', 'gate', 'gate_o', 'gate_i', 'gate_e', 'progbar', 'echo_mosaic', 'oqc_mosaic']
         self._kwargs = {key: locals[key] for key in locals if key not in skip_kwargs}
 
-        self.rqc = self.oqc = self.iqc = self.eqc = None
+        self.rqc = self.echo_eqc = self.oqc = self.echo_pqc = self.pqc = None
+
+        # build mosaics if not built
+        self.echo_build_options = echo_build_options
+        self.oqc_build_options=oqc_build_options
+        build_echo = True if echo_mosaic.N_patches == 0 else False
+        build_oqc = True if (oqc_mosaic and oqc_mosaic.N_patches == 0) else False
+        self.build_mosaics(echo=build_echo, oqc=build_oqc)
 
     def build(self, end: str='back', which: Optional[Union[str|Iterable]]=None, parametrize: Union[bool, Dict[str, bool]]=False, **kwargs) -> None:
         """Abstract build method to construct specified circuit parts."""
         which_list, parametrize_map = self._process_which_and_parametrize(which, parametrize)
 
+        echo_built = False
         for circ_name in which_list:
             if circ_name.lower() == 'rqc':
                 self._build_rqc(parametrize=parametrize_map[circ_name], end=end, **kwargs)
+            elif not echo_built and 'echo' in circ_name.lower():
+                self._build_echo(parametrize=parametrize_map[circ_name], end=end, **kwargs)
+                echo_built=True
             elif circ_name.lower() == 'oqc':
                 self._build_oqc(parametrize=parametrize_map[circ_name], end=end, **kwargs)
-            elif circ_name.lower() == 'iqc':
-                self._build_iqc(parametrize=parametrize_map[circ_name], end=end, **kwargs)
-            elif circ_name.lower() == 'eqc':
-                self._build_eqc(parametrize=parametrize_map[circ_name], end=end, **kwargs)
+            elif circ_name.lower() == 'pqc':
+                self._build_pqc(parametrize=parametrize_map[circ_name], end=end, **kwargs)
 
+    def build_mosaics(self, echo: bool=True, oqc: bool=True):
+        
+        if echo:
+            self.echo_mosaic.build(**self.echo_build_options)
+        if self.oqc_mosaic and oqc:
+            self.oqc_mosaic.build(**self.oqc_build_options)
 
     def get_log_params(self):
 
-        return {
+        res = {
             **self._kwargs,
             'gate': self.gate.name,
             'gate_class': self.gate.__class__.__name__,
+            'gate_r': self.gate_r.name,
+            'gate_r_class': self.gate_r.__class__.__name__,
+            'gate_echo_r': self.gate_echo_r.name,
+            'gate_echo_r_class': self.gate_echo_r.__class__.__name__,
             'gate_o': self.gate_o.name,
             'gate_o_class': self.gate_o.__class__.__name__,
-            'gate_i': self.gate_i.name,
-            'gate_i_class': self.gate_i.__class__.__name__,
-            'gate_e': self.gate_e.name,
-            'gate_e_class': self.gate_e.__class__.__name__,
+            'gate_echo_p': self.gate_echo_p.name,
+            'gate_echo_p_class': self.gate_echo_p.__class__.__name__,
+            'gate_p': self.gate_p.name,
+            'gate_p_class': self.gate_p.__class__.__name__,
+            **self.echo_mosaic.get_log_params(tag='echo')
         }
-    
+        if self.oqc_mosaic is not None:
+            res.update(self.oqc_mosaic.get_log_params(tag='oqc'))
+        return res
+
+
     @property
     def default_which(self):
         
-        return ["RQC", "OQC", "IQC", "EQC"]
+        return ["RQC", "ECHO_RQC", "OQC", "ECHO_PQC", "PQC"]
     
     @property
     def gates(self):
         """Derived classes must define the default circuit combination order."""
-        return {self.gate.name: self.gate, self.gate_o.name: self.gate_o, self.gate_i.name: self.gate_i, self.gate_e.name: self.gate_e}
-
+        return  {
+                    self.gate.name: self.gate, self.gate_r.name: self.gate_r, self.gate_echo_r.name: self.gate_echo_r, 
+                    self.gate_o.name: self.gate_o, self.gate_echo_p.name: self.gate_echo_p, self.gate_p.name: self.gate_p
+                }
+    
     def _build_rqc(self, parametrize: bool=False, end: str='back', **kwargs):
 
         to_end = self._get_to_end(end)
-        self.gate.set_backend(to_end)
+        self.gate_r.set_backend(to_end)
 
         self.rqc = qtn.Circuit(self.N, **kwargs)
         self.rqc.apply_to_arrays(to_end)
         for d in range(self.tau_r):
-            for i in range((d+self.shift)%2, self.N-1+int(self.pbc), 2):
-                params = self.gate.random_params()
+            for i in range((d+self.shift_r)%2, self.N-1+int(self.pbc_r), 2):
+                params = self.gate_r.random_params()
                 qubits = [i, (i+1)%self.N]
-                self.rqc.apply_gate(self.gate.name, params=params, qubits=qubits, gate_round=d, parametrize=parametrize)
+                self.rqc.apply_gate(self.gate_r.name, params=params, qubits=qubits, gate_round=d, parametrize=parametrize)
 
-    def _build_oqc(self, parametrize: bool=True, end: str='back', **kwargs):
-
+    def _build_echo(self, parametrize: bool=False, end: str='back', **kwargs):
+        
         to_end = self._get_to_end(end)
-        self.gate_o.set_backend(to_end)
+        self.gate_echo_r.set_backend(to_end)
+        self.gate_echo_p.set_backend(to_end)
 
-        self.oqc = qtn.Circuit(self.N, **kwargs)
-        self.oqc.apply_to_arrays(to_end)
-        print("Training OQC")
-        for d in range(self.tau_o):
-            for i in range((d+self.shift_o)%2, self.N-1+int(self.pbc_o), 2):
+        print("training echo circuits")
+        full_qc_gates = {}
+        for i, (k, _patch) in enumerate(self.echo_mosaic.get_patches().items()):
+            patch = sorted(_patch, key=lambda x: x[-1])
+            patch_to_full, full_to_patch = self._get_patch_to_full_mappings(patch)
+            N_patch = np.max(list(full_to_patch.values()))+1
+            # create qc_patch
+            for attempt in range(self.echo_attempts):
 
-                for attempt in range(self.oqc_identity_attempts):
-                    params = self.gate_o.random_params()
-                    _qc = qtn.Circuit(2)
-                    _qc.apply_gate(self.gate_o.name, params=params, qubits=[0, 1], parametrize=True)
-                    with warnings.catch_warnings():
-                        warnings.filterwarnings("ignore", category=UserWarning)  # Suppress UserWarnings only
+                # build patch qc
+                pqc_patch = qtn.Circuit(N_patch)
+                qc_patch = qtn.Circuit(N_patch)
+                qc_patch.apply_to_arrays(to_end)
+                for gate in patch:
+                    qubits = [full_to_patch[q] for q in gate[:2]]
+                    pqc_patch.apply_gate(self.gate_echo_p.name, params=self.gate_echo_p.random_params(), qubits=qubits, parametrize=True, gate_round=gate[-1])
+                for gate in pqc_patch.gates[::-1]:
+                    qubits = gate.qubits
+                    qc_patch.apply_gate(self.gate_echo_r.name, params=self.gate_echo_r.random_params(), qubits=qubits, parametrize=False, gate_round=-1-gate.round)    
+                qc_patch.apply_gates(pqc_patch.gates)
 
-                        #TODO: Make more general
-                        loss = GaugeTensorTNLoss(torch.eye(2**_qc.N))
-                        msg = f"gate: {len(self.oqc.gates)+1}/{(self.N//2)*self.tau_o + 1}"
-                        opt = TNOptimizer(
-                            _qc,
-                            loss,
-                            autodiff_backend="torch",
-                            progbar=self.progbar,
-                            callback=lambda opt: self._update_progbar_callback(opt, msg)
-                        )
-                        _qc_opt = opt.optimize(self.epochs, self.oqc_tol)
-
-                    if opt.loss < self.oqc_identity_tol:
-                        break
-                    elif attempt == self.oqc_identity_attempts:
-                        raise RuntimeError(f"gate {i+1} in OQC did not converge in {self.identity_attempts} attempts.")
-
-                _qc_gate = _qc_opt.gates[0]
-                qubits = [i, (i+1)%self.N]
-                self.oqc.apply_gate(_qc_gate.label, params=_qc_gate.params, qubits=qubits, gate_round=d, parametrize=parametrize)
-
-
-    def _build_iqc(self, parametrize: bool=True, reorder: bool=True, end: str='back', **kwargs):
-
-        # NOTE: Only does gate by gate inversion currently
-
-        to_end = self._get_to_end(end)
-        self.gate_i.set_backend(to_end)
-
-        _iqc = qtn.Circuit(self.N, **kwargs)
-        _iqc.apply_to_arrays(to_end)
-
-        print("Training IQC")
-        for i, gate in enumerate(self.rqc.gates[::-1]):
-            if not self.progbar:
-                print(i, end='\r')
-            round = self.tau_r - gate.round - 1
-            if round >= self.tau_i:
-                break
-            
-            for attempt in range(self.identity_attempts):
-                qc = qtn.Circuit(2)
-                qc.apply_gate(gate.label, params=gate.params, qubits=[0, 1], gate_round=gate.round)
-                qc.apply_gate(self.gate_i.name, params=self.gate_i.random_params(), qubits=[0, 1], gate_round=round, parametrize=True)
-
+                # optimize qc_patch
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", category=UserWarning)  # Suppress UserWarnings only
-
-                    #TODO: Make more general
-                    loss = GaugeTensorTNLoss(torch.eye(2**qc.N))
+                    loss = GaugeTensorTNLoss(torch.eye(2**qc_patch.N), gauge=self.gauge, gauge_inds=self.gauge_inds, alpha_thresh=self.alpha_thresh)
+                    msg = f"patch: {i+1}/{self.echo_mosaic.N_patches}"
                     opt = TNOptimizer(
-                        qc,
+                        qc_patch,
                         loss,
                         autodiff_backend="torch",
                         progbar=self.progbar,
-                        callback=lambda opt: self._update_progbar_callback(opt, f"gate: {i+1}/{len(self.rqc.gates)}")
+                        callback=lambda opt: self._update_progbar_callback(opt, msg)
                     )
-                    Iqc_opt = opt.optimize(self.epochs, self.tol)
-                    if opt.loss < self.identity_tol:
+                    qc_opt = opt.optimize(self.echo_epochs, tol=self.echo_rel_tol)
+                    qc_opt.apply_to_arrays(to_end)
+
+                    if opt.loss < self.echo_tol:
                         break
-                    elif attempt == self.identity_attempts:
-                        raise RuntimeError(f"gate {i+1} in IQC did not converge in {self.identity_attempts} attempts.")
 
-            iqc_gate = Iqc_opt.gates[-1]
-            _iqc.apply_gate(iqc_gate.label, params=iqc_gate.params, qubits=gate.qubits, gate_round=round, parametrize=parametrize)
+                    elif attempt == self.echo_attempts-1:
+                        raise RuntimeError(f"patch {i+1} in echo_mosaic did not converge in {self.echo_attempts} attempts.")
 
-        # reorder the gates
-        if not reorder:
-            self.iqc = _iqc
-            return
-        
-        self.iqc = qtn.Circuit(self.N, **kwargs)
-        self.iqc.apply_to_arrays(to_end)
+            # store gates in to build full_qc
+            for _gate in qc_opt.gates:
+                qubits = [patch_to_full[q] for q in _gate.qubits]
+                gate = qtn.Gate(_gate.label, _gate.params, qubits=qubits, round=_gate.round, parametrize=_gate.parametrize)
+                full_qc_gates[gate.round] = sorted(full_qc_gates.get(gate.round, []) + [gate], key=lambda x: x.qubits[0])
 
-        for round in range(self.tau_i):
-            gates = {}
-            for gate in _iqc.gates:
-                if gate.round < round:
-                    continue
-                if gate.round > round:
-                    break
-                gates[gate.qubits[0]] = {'gate_id': gate.label, 'params': gate.params, 'qubits': gate.qubits, 'parametrize': parametrize, 'gate_round': round}
+        # Build full echo qc
+        self.echo_rqc = qtn.Circuit(self.N, **kwargs)
+        self.echo_pqc = qtn.Circuit(self.N, **kwargs)
+        self.echo_rqc.apply_to_arrays(to_end)
+        self.echo_pqc.apply_to_arrays(to_end)
+
+        for i in np.sort(list(full_qc_gates.keys())):
             
-            inds = list(gates.keys())
-            inds = np.sort(inds)
-            for i in inds:
-                self.iqc.apply_gate(**gates[i])
+            for gate in full_qc_gates[i]:
+                if i < 0:
+                    self.echo_rqc.apply_gate(gate.label, params=gate.params, qubits=gate.qubits, parametrize=parametrize, gate_round=gate.round)
+                else:
+                    self.echo_pqc.apply_gate(gate.label, params=gate.params, qubits=gate.qubits, parametrize=parametrize, gate_round=gate.round)
 
-    def _build_eqc(self, parametrize: bool=True, end: str='back', **kwargs):
+    def _build_oqc(self, parametrize: bool=False, end: str='back', **kwargs):
+        
+        to_end = self._get_to_end(end)
+        self.gate_o.set_backend(to_end)
+
+        if self.oqc_mosaic is None:
+            self.oqc = qtn.Circuit(self.N)
+            self.oqc.apply_to_arrays(to_end)
+            return
+
+        print("training OQC")
+        full_qc_gates = {}
+        for i, (k, _patch) in enumerate(self.oqc_mosaic.get_patches().items()):
+            patch = sorted(_patch, key=lambda x: x[-1])
+            patch_to_full, full_to_patch = self._get_patch_to_full_mappings(patch)
+            N_patch = np.max(list(full_to_patch.values()))+1
+            # create qc_patch
+            for attempt in range(self.oqc_attempts):
+
+                # build patch qc
+                oqc_patch = qtn.Circuit(N_patch)
+                oqc_patch.apply_to_arrays(to_end)
+                for gate in patch:
+                    qubits = [full_to_patch[q] for q in gate[:2]]
+                    oqc_patch.apply_gate(self.gate_echo_p.name, params=self.gate_echo_p.random_params(), qubits=qubits, parametrize=True, gate_round=gate[-1])
+
+                # optimize qc_patch
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=UserWarning)  # Suppress UserWarnings only
+                    loss = GaugeTensorTNLoss(torch.eye(2**oqc_patch.N), gauge=self.gauge, gauge_inds=self.gauge_inds, alpha_thresh=self.alpha_thresh)
+                    
+                    msg = f"patch: {i+1}/{self.oqc_mosaic.N_patches}"
+                    opt = TNOptimizer(
+                        oqc_patch,
+                        loss,
+                        autodiff_backend="torch",
+                        progbar=self.progbar,
+                        callback=lambda opt: self._update_progbar_callback(opt, msg)
+                    )
+                    qc_opt = opt.optimize(self.oqc_epochs, tol=self.oqc_rel_tol)
+                    qc_opt.apply_to_arrays(to_end)
+
+                    if opt.loss < self.oqc_tol:
+                        break
+
+                    elif attempt == self.oqc_attempts-1:
+                        raise RuntimeError(f"patch {i+1} in echo_mosaic did not converge in {self.echo_attempts} attempts.")
+
+            # store gates in to build full_qc
+            for _gate in qc_opt.gates:
+                qubits = [patch_to_full[q] for q in _gate.qubits]
+                gate = qtn.Gate(_gate.label, _gate.params, qubits=qubits, round=_gate.round, parametrize=_gate.parametrize)
+                full_qc_gates[gate.round] = sorted(full_qc_gates.get(gate.round, []) + [gate], key=lambda x: x.qubits[0])
+
+        # Build full echo qc
+        self.oqc = qtn.Circuit(self.N, **kwargs)
+        self.oqc.apply_to_arrays(to_end)
+
+        for i in np.sort(list(full_qc_gates.keys())):
+            for gate in full_qc_gates[i]:
+                self.oqc.apply_gate(gate.label, params=gate.params, qubits=gate.qubits, parametrize=parametrize, gate_round=gate.round)
+        
+    def _build_pqc(self, parametrize: bool=True, end: str='back', **kwargs):
 
         to_end = self._get_to_end(end)
-        self.gate_e.set_backend(to_end)
+        self.gate_p.set_backend(to_end)
 
-        self.eqc = qtn.Circuit(self.N, **kwargs)
-        self.eqc.apply_to_arrays(to_end)
-        for d in range(self.tau_e):
-            for i in range((d+self.shift_e)%2, self.N-1+int(self.pbc_e), 2):
-                params = self.gate_e.random_params()
+        self.pqc = qtn.Circuit(self.N, **kwargs)
+        self.pqc.apply_to_arrays(to_end)
+        for d in range(self.tau_p):
+            for i in range((d+self.shift_p)%2, self.N-1+int(self.pbc_p), 2):
+                params = self.gate_p.random_params()
                 qubits = [i, (i+1)%self.N]
-                self.eqc.apply_gate(self.gate_e.name, params=params, qubits=qubits, gate_round=d, parametrize=parametrize)
+                self.pqc.apply_gate(self.gate_p.name, params=params, qubits=qubits, gate_round=d, parametrize=parametrize)
 
+    def _get_patch_to_full_mappings(self, patch: List[Tuple[int]]):
+
+        # find qubit mapping to/from patch
+        bonds = [g[:2] for g in patch]
+        qs = np.sort(np.unique(np.array(bonds).ravel()))
+        if np.any(np.diff(qs)> 1): # periodic bonds
+            dq = 0
+            patch_qs = qs
+            while np.any(np.diff(patch_qs) > 1):
+                patch_qs = [(q+1)%self.N for q in patch_qs]
+                dq += 1
+                if dq == 2*self.N:
+                    raise RuntimeError("Patch is disconnected.")
+            q_sub = self.N-dq
+        else:
+            q_sub = np.min(qs)
+        patch_to_full = {(q-q_sub)%self.N: q for q in qs}
+        full_to_patch = {q:(q-q_sub)%self.N for q in qs}
+        return patch_to_full, full_to_patch
+    
     @staticmethod
     def _update_progbar_callback(opt, postfix_str: str):
         if hasattr(opt, '_pbar') and opt._pbar is not None:
             opt._pbar.set_postfix_str(postfix_str)  # Directly set the postfix string
         return False  # Returning False means "continue optimization"
+

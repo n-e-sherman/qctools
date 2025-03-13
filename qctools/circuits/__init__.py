@@ -1,2 +1,4 @@
+from ._base import CircuitManager
 from .echo_mosaic import EchoMosaicCircuitManager
-from .enhanced_echo_mosaic import EnhancedEchoMosaicCircuitManager
+from .gate_inversion import GateInversionBaseCircuitManager, GateInversionCircuitManager, EnhancedEchoMosaicCircuitManager
+# from .enhanced_echo_mosaic import EnhancedEchoMosaicCircuitManager
