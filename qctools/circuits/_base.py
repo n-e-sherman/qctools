@@ -56,7 +56,7 @@ class CircuitManager(ABC):
         pass
 
     def get(self, 
-            build: bool=True, 
+            build: bool=False, 
             parametrize: Union[bool, Dict[str, bool]]=False, 
             end: str='back',
             which: Optional[Union[str|Iterable[str]]]=None, 
@@ -130,7 +130,7 @@ class CircuitManager(ABC):
  
         qc_expanded = qtn.Circuit(circ.N)
         for gate in circ.gates:
-            self.gates[gate.label].apply(qc_expanded, gate.qubits, gate.params, parametrize=gate.parametrize)
+            self.gates[gate.label].apply(qc_expanded, gate.qubits, gate.params)
         
         return qc_expanded
 

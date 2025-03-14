@@ -196,6 +196,7 @@ class EchoMosaicCircuitManager(CircuitManager):
 
         print("training echo circuits")
         full_qc_gates = {}
+        self.echo_patch_qcs = {}
         for i, (k, _patch) in enumerate(self.echo_mosaic.get_patches().items()):
             patch = sorted(_patch, key=lambda x: x[-1])
             patch_to_full, full_to_patch = self._get_patch_to_full_mappings(patch)
@@ -229,6 +230,7 @@ class EchoMosaicCircuitManager(CircuitManager):
                     )
                     qc_opt = opt.optimize(self.echo_epochs, tol=self.echo_rel_tol)
                     qc_opt.apply_to_arrays(to_end)
+                    self.echo_patch_qcs[k] = qc_opt.copy()
 
                     if opt.loss < self.echo_tol:
                         break
@@ -260,6 +262,7 @@ class EchoMosaicCircuitManager(CircuitManager):
         
         to_end = self._get_to_end(end)
         self.gate_o.set_backend(to_end)
+        
 
         if self.oqc_mosaic is None:
             self.oqc = qtn.Circuit(self.N)
@@ -268,6 +271,7 @@ class EchoMosaicCircuitManager(CircuitManager):
 
         print("training OQC")
         full_qc_gates = {}
+        self.oqc_patch_qcs = {} # for testing
         for i, (k, _patch) in enumerate(self.oqc_mosaic.get_patches().items()):
             patch = sorted(_patch, key=lambda x: x[-1])
             patch_to_full, full_to_patch = self._get_patch_to_full_mappings(patch)
@@ -297,6 +301,8 @@ class EchoMosaicCircuitManager(CircuitManager):
                     )
                     qc_opt = opt.optimize(self.oqc_epochs, tol=self.oqc_rel_tol)
                     qc_opt.apply_to_arrays(to_end)
+                    self.oqc_patch_qcs[k] = qc_opt.copy()
+
 
                     if opt.loss < self.oqc_tol:
                         break

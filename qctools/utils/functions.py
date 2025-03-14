@@ -1,10 +1,11 @@
 import copy
 import torch
+import qiskit
 import pandas as pd
 import quimb.tensor as qtn
 from typing import Tuple
 
-from .lambdas import TorchConverter
+from .lambdas import TorchConverter, NumpyConverter
 
 def i_to_b(index, num_qubits, order="big"):
     """Convert an integer index to a bitstring of a given length, with optional ordering.
@@ -116,8 +117,6 @@ def mlflow_runs_to_df(all_runs):
     return df_all
 
 
-
-
 def qiskit_to_quimb(qc_qiskit, converter = TorchConverter()):
 
     QISKIT_TO_QUIMB = {
@@ -143,3 +142,25 @@ def qiskit_to_quimb(qc_qiskit, converter = TorchConverter()):
         qc.apply_gate(gate, params=params, qubits=qubits)
 
     return qc
+
+def quimb_to_qiskit(qc_quimb: qtn.Circuit) -> qiskit.QuantumCircuit:
+        
+        QISKIT_TO_QUIMB = {
+            'cz': 'CZ',
+            'x': 'X',
+            'sx': 'X_1_2',
+            'rz': 'RZ',
+            'u3': 'U3',
+            'cx': 'CX'
+        }
+        QUIMB_TO_QISKIT = {v:k for k,v in QISKIT_TO_QUIMB.items()}
+
+        to_end = NumpyConverter()
+        qc_qiskit = qiskit.QuantumCircuit(qc_quimb.N)
+
+        for gate in qc_quimb.gates:
+            label = gate.label
+            qiskit_label = QUIMB_TO_QISKIT.get(label, label.upper())
+            getattr(qc_qiskit, qiskit_label)(*to_end(gate.params), *gate.qubits)
+
+        return qc_qiskit

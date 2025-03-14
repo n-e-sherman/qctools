@@ -41,19 +41,23 @@ class BrickwallMosaic(Mosaic):
             wire_patch_seq1 = [x for x in np.unique(wires[q1]) if not x == self.missing_id]
             wire_patch_seq2 = [x for x in np.unique(wires[q2]) if not x == self.missing_id]
 
+            # check geometric constraint on q1
             valid1 = True
             for pid in wire_patch_seq1:
                 ts = np.argwhere(wires[q1] == pid).ravel()
                 if np.any(np.diff(ts) > 1):
                     valid1 = False
                     break
-
+            
+            # check geometric constraint on q2
             valid2 = True
             for pid in wire_patch_seq2:
                 ts = np.argwhere(wires[q2] == pid).ravel()
                 if np.any(np.diff(ts) > 1):
                     valid2 = False
                     break
+
+            # check width is not too large
 
             if valid1 and valid2:
                 valid_bricks.append(brick)
