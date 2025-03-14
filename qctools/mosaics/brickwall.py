@@ -12,7 +12,7 @@ from ._base import Mosaic
 
 class BrickwallMosaic(Mosaic):
 
-    def __init__(self, N, T, shift=0, pbc=False, N_initial=1, min_patch_size=1, max_patch_size=4, unassigned_id: int=-1, missing_id: int=-2):
+    def __init__(self, N, T, shift=1, pbc=False, N_initial=1, min_patch_size=1, max_patch_size=4, unassigned_id: int=-1, missing_id: int=-2):
         
         super().__init__(N_initial=N_initial, min_patch_size=min_patch_size, max_patch_size=max_patch_size, unassigned_id=unassigned_id, missing_id=missing_id)
         
