@@ -57,8 +57,6 @@ class BrickwallMosaic(Mosaic):
                     valid2 = False
                     break
 
-            # check width is not too large
-
             if valid1 and valid2:
                 valid_bricks.append(brick)
 
@@ -71,12 +69,12 @@ class BrickwallMosaic(Mosaic):
         for gate in patch:
             q1, q2, t = gate
             brick_proposals += [
-                (q1-1, q1, t-1), 
-                (q1-1, q1, t+1), 
-                (q2, q2+1, t-1), 
-                (q2, q2+1, t+1), 
-                (q1-2, q2-2, t), 
-                (q1+2, q2+2, t)
+                ((q1-1)%self.N, q1%self.N, t-1), 
+                ((q1-1)%self.N, q1%self.N, t+1), 
+                (q2%self.N, (q2+1)%self.N, t-1), 
+                (q2%self.N, (q2+1)%self.N, t+1), 
+                ((q1-2)%self.N, (q2-2)%self.N, t), 
+                ((q1+2)%self.N, (q2+2)%self.N, t)
             ]
         return set(brick_proposals)
 

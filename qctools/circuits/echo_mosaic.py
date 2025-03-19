@@ -6,7 +6,7 @@ import quimb as qu
 import quimb.tensor as qtn
 from quimb.tensor.optimize import TNOptimizer
 from qctools.gates import Gate, Haar4Gate, HaarCZMinimalStackGate
-from qctools.utils import GaugeTensorTNLoss
+from qctools.utils import GaugeTensorTNLoss, early_stopping_callback, EarlyStopException
 
 from typing import Union, Tuple, Callable, Iterable, Optional, Dict, Any, List
 
@@ -47,6 +47,7 @@ class EchoMosaicCircuitManager(CircuitManager):
                  gauge_inds: Tuple[int]=(0, 0), 
                  alpha_thresh:float=1e-7,
                  progbar: bool=True,
+                 early_stopping: bool=True,
                  qasm: Optional[str] = None,
                  to_backend: Optional[Callable]=None,
                  to_frontend: Optional[Callable]=None,
@@ -101,6 +102,7 @@ class EchoMosaicCircuitManager(CircuitManager):
         self.gauge_inds=gauge_inds
         self.alpha_thresh=alpha_thresh
         self.progbar=progbar
+        self.early_stopping = early_stopping
 
         frame = inspect.currentframe()
         args, vargs, varkw, locals = inspect.getargvalues(frame)
@@ -160,7 +162,6 @@ class EchoMosaicCircuitManager(CircuitManager):
         if self.oqc_mosaic is not None:
             res.update(self.oqc_mosaic.get_log_params(tag='oqc'))
         return res
-
 
     @property
     def default_which(self):
@@ -226,9 +227,12 @@ class EchoMosaicCircuitManager(CircuitManager):
                         loss,
                         autodiff_backend="torch",
                         progbar=self.progbar,
-                        callback=lambda opt: self._update_progbar_callback(opt, msg)
+                        callback=lambda opt: self._update_progbar_callback(opt, msg, self.echo_tol)
                     )
-                    qc_opt = opt.optimize(self.echo_epochs, tol=self.echo_rel_tol)
+                    try:
+                        qc_opt = opt.optimize(self.echo_epochs, tol=self.echo_rel_tol)
+                    except EarlyStopException:
+                        qc_opt = opt.get_tn_opt()  # Return the last optimized quantum circuit state
                     qc_opt.apply_to_arrays(to_end)
                     self.echo_patch_qcs[k] = qc_opt.copy()
 
@@ -297,9 +301,12 @@ class EchoMosaicCircuitManager(CircuitManager):
                         loss,
                         autodiff_backend="torch",
                         progbar=self.progbar,
-                        callback=lambda opt: self._update_progbar_callback(opt, msg)
+                        callback=lambda opt: self._update_progbar_callback(opt, msg, self.oqc_tol)
                     )
-                    qc_opt = opt.optimize(self.oqc_epochs, tol=self.oqc_rel_tol)
+                    try:
+                        qc_opt = opt.optimize(self.oqc_epochs, tol=self.oqc_rel_tol)
+                    except EarlyStopException:
+                        qc_opt = opt.get_tn_opt()  # Return the last optimized quantum circuit state
                     qc_opt.apply_to_arrays(to_end)
                     self.oqc_patch_qcs[k] = qc_opt.copy()
 
@@ -357,9 +364,10 @@ class EchoMosaicCircuitManager(CircuitManager):
         full_to_patch = {q:(q-q_sub)%self.N for q in qs}
         return patch_to_full, full_to_patch
     
-    @staticmethod
-    def _update_progbar_callback(opt, postfix_str: str):
+    def _update_progbar_callback(self, opt, postfix_str: str, loss_threshold: float):
         if hasattr(opt, '_pbar') and opt._pbar is not None:
             opt._pbar.set_postfix_str(postfix_str)  # Directly set the postfix string
+        if self.early_stopping:
+            early_stopping_callback(opt, loss_threshold)
         return False  # Returning False means "continue optimization"
 

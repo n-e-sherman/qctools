@@ -79,15 +79,15 @@ class Mosaic(ABC):
         patch_ids = [i+self.N_patches for i in range(N)]
         if np.any([patch_id in self.patches for patch_id in patch_ids]):
             raise RuntimeError("trying to add a patch where a prexisting patch already exists")
-        starter_bricks = self._get_patch_starter_bricks()
-        sampled_bricks = random.sample(starter_bricks, min(N, len(starter_bricks)))
+        
+        starter_bricks = self._get_patch_starter_bricks(N)
             
-        for patch_id, brick in zip(patch_ids, sampled_bricks):
+        for patch_id, brick in zip(patch_ids, starter_bricks):
             self.patches[patch_id] = []
             self.patch_sizes[patch_id] = random.sample(range(self.min_patch_size, self.max_patch_size+1), 1)[0]
             self.add_brick_to_patch(brick, patch_id)
 
-        return len(sampled_bricks)
+        return len(starter_bricks)
 
     def add_brick_to_patch(self, brick: Tuple[int], patch_id: int):
 
@@ -159,8 +159,18 @@ class Mosaic(ABC):
     def _initialize_wires_and_bricks(self):
         """define the wires and the set of all bricks for the mosaic design."""
         pass
+
+    def _get_patch_starter_bricks(self, N):
+
+        all_starter_bricks = self._get_all_patch_starter_bricks()
+        starter_bricks = self._select_starter_bricks(all_starter_bricks, N)
+        return starter_bricks
     
-    def _get_patch_starter_bricks(self):
+    def _select_starter_bricks(self, starter_bricks, N):
+
+        return random.sample(starter_bricks, min(N, len(starter_bricks)))
+    
+    def _get_all_patch_starter_bricks(self):
 
         t_boundaries = self._get_t_boundaries()
         starter_bricks = []
@@ -186,13 +196,13 @@ class Mosaic(ABC):
         return t_boundaries
 
     
-    def draw(self, cmap_name="tab20", seaborn_cmap: bool=True, show_unassigned: bool=True, unassigned_color: str='w', show_reflection: bool=True, scale=0.4, x_scale=None, y_scale=None, return_fig=False):
+    def draw(self, cmap_name="tab20", seaborn_cmap: bool=True, show_unassigned: bool=True, unassigned_color: str='w', show_reflection: bool=True, scale=1.0, x_scale=None, y_scale=None, return_fig=False):
 
         if x_scale is None:
-            x_scale = scale
+            x_scale = self.N / 3
         if y_scale is None:
-            y_scale = scale
-        fig, ax = plt.subplots(figsize=(self.T * 0.8 * x_scale, self.N * 0.5 * y_scale))  # Adjust aspect ratio
+            y_scale = self.T
+        fig, ax = plt.subplots(figsize=(x_scale * scale, y_scale * scale / 2))  # Adjust aspect ratio
 
         colors = self._generate_patch_colors(self.N_patches, cmap_name, seaborn_cmap)
         if show_unassigned:

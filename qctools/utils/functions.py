@@ -164,3 +164,12 @@ def quimb_to_qiskit(qc_quimb: qtn.Circuit) -> qiskit.QuantumCircuit:
             getattr(qc_qiskit, qiskit_label)(*to_end(gate.params), *gate.qubits)
 
         return qc_qiskit
+
+class EarlyStopException(Exception):
+    """Custom exception to stop optimization early."""
+    pass
+
+def early_stopping_callback(opt, loss_threshold):
+    """Callback function to stop training early when loss is below threshold."""
+    if opt.loss < loss_threshold:
+        raise EarlyStopException  # Forcefully terminate optimization

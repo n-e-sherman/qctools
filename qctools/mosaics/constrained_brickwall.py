@@ -51,13 +51,11 @@ class ConstrainedBrickwallMosaic(BrickwallMosaic):
             qs = np.unique(np.array(bonds).ravel())
             if self.max_width and (len(qs) > self.max_width):
                 valid = False
-                break
 
             # check depth
             ts = np.unique([g[-1] for g in patch] + [brick[-1]])
-            if self.max_depth and (len(ts) > self.max_width):
+            if self.max_depth and (len(ts) > self.max_depth):
                 valid = False
-                break
 
             if valid:
                 valid_bricks.append(brick)

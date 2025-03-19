@@ -91,9 +91,13 @@ class CircuitManager(ABC):
         gate_round = 0
         for qc in qcs:
             for gate in qc.gates:
+                new_gate_round = gate.round
+                if gate.round is not None:
+                    new_gate_round += gate_round
                 qc_res.apply_gate(gate.label, params=gate.params, qubits=gate.qubits, 
-                                  gate_round=gate_round+gate.round, parametrize=gate.parametrize)
-            gate_round += (gate.round + 1)
+                                  gate_round=new_gate_round, parametrize=gate.parametrize)
+            if gate.round is not None:
+                gate_round += (gate.round + 1)
 
         # convert backend
         to_end = self._get_to_end(end)
@@ -130,7 +134,10 @@ class CircuitManager(ABC):
  
         qc_expanded = qtn.Circuit(circ.N)
         for gate in circ.gates:
-            self.gates[gate.label].apply(qc_expanded, gate.qubits, gate.params)
+            if gate.label in self.gates:
+                self.gates[gate.label].apply(qc_expanded, gate.qubits, gate.params)
+            else:
+                qc_expanded.apply_gate(gate.label, params=gate.params, qubits=gate.qubits) # allows for 
         
         return qc_expanded
 
@@ -143,7 +150,7 @@ class CircuitManager(ABC):
 
         for gate in qc_quimb.gates:
             label = gate.label
-            qiskit_label = self.QUIMB_TO_QISKIT[label]
+            qiskit_label = self.QUIMB_TO_QISKIT.get(label, label.lower())
             getattr(qc_qiskit, qiskit_label)(*to_end(gate.params), *gate.qubits)
 
         return qc_qiskit
@@ -235,7 +242,8 @@ class CircuitManager(ABC):
 
         gates = list(set([gate.label for gate in qc.gates]))
         for gate in gates:
-            self.gates[gate].set_backend(to_end)
+            if gate in self.gates:
+                self.gates[gate].set_backend(to_end)
 
         for gate in qc.gates:
             qc_res.apply_gate(gate.label, params=to_end(gate.params), qubits=gate.qubits, gate_round=gate.round, parametrize=gate.parametrize)
