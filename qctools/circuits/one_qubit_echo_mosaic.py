@@ -6,7 +6,7 @@ import quimb as qu
 import quimb.tensor as qtn
 from quimb.tensor.optimize import TNOptimizer
 from qctools.gates import Gate, Haar4Gate, HaarCZMinimalStackGate
-from qctools.utils import GaugeTensorTNLoss, early_stopping_callback, EarlyStopException
+from qctools.utils import GaugeTensorTNLoss, TraceFidelityTNLoss, early_stopping_callback, EarlyStopException
 
 from typing import Union, Tuple, Callable, Iterable, Optional, Dict, Any, List
 
@@ -47,9 +47,7 @@ def get_prior_patches(patches, wires):
             # Store the prior patches for this patch
             prior_patch_info[q0] = prior_patch_q0
             prior_patch_info[q1] = prior_patch_q1
-
         prior_patches[patch_id] = prior_patch_info
-
     return prior_patches
 
 class OneQubitEchoMosaicCircuitManager(EchoMosaicCircuitManager):
@@ -130,7 +128,6 @@ class OneQubitEchoMosaicCircuitManager(EchoMosaicCircuitManager):
                         gate = unitaries[prior_patch_id][q]
                     qubits = [full_to_patch[q] for q in gate.qubits]
                     qc_patch.apply_gate(gate.label, params=gate.params, qubits=qubits, parametrize=False, gate_round=None)
-
                 qc_patch.apply_gates(pqc_patch.gates)
 
                 # optimize qc_patch
@@ -141,10 +138,17 @@ class OneQubitEchoMosaicCircuitManager(EchoMosaicCircuitManager):
                     for q, gate in unitaries[k].items():
                         qubits = [full_to_patch[q]]
                         qc_target.apply_gate(gate.label, params=gate.params, qubits=qubits, parametrize=False, gate_round=None)
-                    U_target = qc_target.get_uni().to_dense()
-                    I = torch.argmax(torch.abs(U_target))
-                    gauge_inds = (I//len(U_target), I%len(U_target))
-                    loss = GaugeTensorTNLoss(U_target, gauge_inds=gauge_inds, alpha_thresh=self.alpha_thresh)
+
+                    if self.echo_loss == 'l2':
+                        U_target = qc_target.get_uni().to_dense()
+                        I = torch.argmax(torch.abs(U_target))
+                        gauge_inds = (I//len(U_target), I%len(U_target))
+                        loss = GaugeTensorTNLoss(U_target, gauge_inds=gauge_inds, alpha_thresh=self.alpha_thresh)
+                    elif self.echo_loss == 'trace':
+                        loss = TraceFidelityTNLoss(qc_target.get_uni())
+                    else:
+                        raise RuntimeError(f"echo_loss: {self.echo_loss} is not a valid option.")
+
                     msg = f"patch: {i+1}/{self.echo_mosaic.N_patches}"
                     opt = TNOptimizer(
                         qc_patch,
@@ -159,10 +163,8 @@ class OneQubitEchoMosaicCircuitManager(EchoMosaicCircuitManager):
                         qc_opt = opt.get_tn_opt()  # Return the last optimized quantum circuit state
                     qc_opt.apply_to_arrays(to_end)
                     self.echo_patch_qcs[k] = qc_opt.copy()
-
                     if opt.loss < self.echo_tol:
                         break
-
                     elif attempt == self.echo_attempts-1:
                         raise RuntimeError(f"patch {i+1} in echo_mosaic did not converge in {self.echo_attempts} attempts.")
                 
@@ -182,7 +184,6 @@ class OneQubitEchoMosaicCircuitManager(EchoMosaicCircuitManager):
         self.echo_pqc.apply_to_arrays(to_end)
 
         for i in np.sort(list(full_qc_gates.keys())):
-            
             for gate in full_qc_gates[i]:
                 if i < 0:
                     self.echo_rqc.apply_gate(gate.label, params=gate.params, qubits=gate.qubits, parametrize=parametrize, gate_round=gate.round)
@@ -200,7 +201,6 @@ class OneQubitEchoMosaicCircuitManager(EchoMosaicCircuitManager):
         to_end = self._get_to_end(end)
         self.gate_o.set_backend(to_end)
         
-
         if self.oqc_mosaic is None:
             self.oqc = qtn.Circuit(self.N)
             self.oqc.apply_to_arrays(to_end)
@@ -220,7 +220,6 @@ class OneQubitEchoMosaicCircuitManager(EchoMosaicCircuitManager):
             gate = unitaries[patch_id][q]
             self.oqc_final_unitaries[q] = gate
 
-
         print("training OQC")
         full_qc_gates = {}
         self.oqc_patch_qcs = {} # for testing
@@ -234,7 +233,6 @@ class OneQubitEchoMosaicCircuitManager(EchoMosaicCircuitManager):
                 # build patch qc
                 oqc_patch = qtn.Circuit(N_patch)
                 oqc_patch.apply_to_arrays(to_end)
-
                 # add 1q-layer
                 for q, prior_patch_id in prior_patches[k].items():
                     if prior_patch_id is None:
@@ -246,7 +244,6 @@ class OneQubitEchoMosaicCircuitManager(EchoMosaicCircuitManager):
                 for gate in patch:
                     qubits = [full_to_patch[q] for q in gate[:2]]
                     oqc_patch.apply_gate(self.gate_echo_p.name, params=self.gate_echo_p.random_params(), qubits=qubits, parametrize=True, gate_round=gate[-1])
-
                 # optimize qc_patch
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", category=UserWarning)  # Suppress UserWarnings only
@@ -254,10 +251,16 @@ class OneQubitEchoMosaicCircuitManager(EchoMosaicCircuitManager):
                     for q, gate in unitaries[k].items():
                         qubits = [full_to_patch[q]]
                         qc_target.apply_gate(gate.label, params=gate.params, qubits=qubits, parametrize=False, gate_round=None)
-                    U_target = qc_target.get_uni().to_dense()
-                    I = torch.argmax(torch.abs(U_target))
-                    gauge_inds = (I//len(U_target), I%len(U_target))
-                    loss = GaugeTensorTNLoss(U_target, gauge_inds=gauge_inds, alpha_thresh=self.alpha_thresh)
+
+                    if self.oqc_loss == 'l2':
+                        U_target = qc_target.get_uni().to_dense()
+                        I = torch.argmax(torch.abs(U_target))
+                        gauge_inds = (I//len(U_target), I%len(U_target))
+                        loss = GaugeTensorTNLoss(U_target, gauge_inds=gauge_inds, alpha_thresh=self.alpha_thresh)
+                    elif self.oqc_loss == 'trace':
+                        loss = TraceFidelityTNLoss(qc_target.get_uni())
+                    else:
+                        raise RuntimeError(f"oqc_loss: {self.oqc_loss} is not a valid option.")
                     
                     msg = f"patch: {i+1}/{self.oqc_mosaic.N_patches}"
                     opt = TNOptimizer(
@@ -273,10 +276,8 @@ class OneQubitEchoMosaicCircuitManager(EchoMosaicCircuitManager):
                         qc_opt = opt.get_tn_opt()  # Return the last optimized quantum circuit state
                     qc_opt.apply_to_arrays(to_end)
                     self.oqc_patch_qcs[k] = qc_opt.copy()
-
                     if opt.loss < self.oqc_tol:
                         break
-
                     elif attempt == self.oqc_attempts-1:
                         raise RuntimeError(f"patch {i+1} in echo_mosaic did not converge in {self.echo_attempts} attempts.")
 
@@ -296,3 +297,18 @@ class OneQubitEchoMosaicCircuitManager(EchoMosaicCircuitManager):
             for gate in full_qc_gates[i]:
                 self.oqc.apply_gate(gate.label, params=gate.params, qubits=gate.qubits, parametrize=parametrize, gate_round=gate.round)
         
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

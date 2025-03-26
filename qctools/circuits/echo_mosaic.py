@@ -6,7 +6,7 @@ import quimb as qu
 import quimb.tensor as qtn
 from quimb.tensor.optimize import TNOptimizer
 from qctools.gates import Gate, Haar4Gate, HaarCZMinimalStackGate
-from qctools.utils import GaugeTensorTNLoss, early_stopping_callback, EarlyStopException
+from qctools.utils import GaugeTensorTNLoss, TraceFidelityTNLoss, early_stopping_callback, EarlyStopException
 
 from typing import Union, Tuple, Callable, Iterable, Optional, Dict, Any, List
 
@@ -36,12 +36,14 @@ class EchoMosaicCircuitManager(CircuitManager):
                  echo_tol: float=1e-8,
                  echo_attempts: int=50,
                  echo_build_options: Dict[Any, Any]={},
+                 echo_loss: str='L2',
                  
                  oqc_epochs: int=1000,
                  oqc_rel_tol: float=1e-7,
                  oqc_tol: float=1e-5,
                  oqc_attempts: int=20,
                  oqc_build_options: Dict[Any, Any]={},
+                 oqc_loss: str='L2',
 
                  gauge: bool=True,
                  gauge_inds: Tuple[int]=(0, 0), 
@@ -72,10 +74,9 @@ class EchoMosaicCircuitManager(CircuitManager):
         self.pbc_r = pbc_r if pbc_r is not None else pbc
         self.pbc_p = pbc_p if pbc_p is not None else pbc
         
-        
         self.shift_echo_r = echo_mosaic.shift_r # might not be needed
         self.shift_echo_p = echo_mosaic.shift
-        self.shift_o = oqc_mosaic.shift
+        self.shift_o = oqc_mosaic.shift if oqc_mosaic.shift is not None else 1-echo_mosaic.shift
         
         self.shift_r = (self.shift_echo_r - (self.tau_r%2))%2
         self.shift_p = 1 - self.shift_echo_r
@@ -92,11 +93,13 @@ class EchoMosaicCircuitManager(CircuitManager):
         self.echo_rel_tol = echo_rel_tol
         self.echo_tol = echo_tol
         self.echo_attempts = echo_attempts
+        self.echo_loss = echo_loss.lower()
 
         self.oqc_epochs = oqc_epochs
         self.oqc_rel_tol = oqc_rel_tol
         self.oqc_tol = oqc_tol
         self.oqc_attempts = oqc_attempts
+        self.oqc_loss = oqc_loss.lower()
 
         self.gauge=gauge
         self.gauge_inds=gauge_inds
@@ -220,7 +223,21 @@ class EchoMosaicCircuitManager(CircuitManager):
                 # optimize qc_patch
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", category=UserWarning)  # Suppress UserWarnings only
-                    loss = GaugeTensorTNLoss(torch.eye(2**qc_patch.N), gauge=self.gauge, gauge_inds=self.gauge_inds, alpha_thresh=self.alpha_thresh)
+
+                    if self.echo_loss == 'l2':
+                        loss = GaugeTensorTNLoss(torch.eye(2**qc_patch.N), gauge=self.gauge, gauge_inds=self.gauge_inds, alpha_thresh=self.alpha_thresh)
+                    elif self.echo_loss == 'trace':
+                        # build identity tensor network, kind of sloppy but works.
+                        qc_target = qtn.Circuit(qc_patch.N)
+                        for i in range(qc_target.N):
+                            qc_target.rz(0.0, i)
+                        loss = TraceFidelityTNLoss(qc_target.get_uni())
+                    else:
+                        raise RuntimeError(f"echo_loss: {self.echo_loss} is not a valid option.")
+
+                    # TraceFidelityTNLoss
+                    
+
                     msg = f"patch: {i+1}/{self.echo_mosaic.N_patches}"
                     opt = TNOptimizer(
                         qc_patch,
@@ -293,7 +310,16 @@ class EchoMosaicCircuitManager(CircuitManager):
                 # optimize qc_patch
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", category=UserWarning)  # Suppress UserWarnings only
-                    loss = GaugeTensorTNLoss(torch.eye(2**oqc_patch.N), gauge=self.gauge, gauge_inds=self.gauge_inds, alpha_thresh=self.alpha_thresh)
+
+                    if self.oqc_loss == 'l2':
+                        loss = GaugeTensorTNLoss(torch.eye(2**oqc_patch.N), gauge=self.gauge, gauge_inds=self.gauge_inds, alpha_thresh=self.alpha_thresh)
+                    elif self.oqc_loss == 'trace':
+                        qc_target = qtn.Circuit(oqc_patch.N)
+                        for i in range(qc_target.N):
+                            qc_target.rz(0.0, i)
+                        loss = TraceFidelityTNLoss(qc_target.get_uni())
+                    else:
+                        raise RuntimeError(f"oqc_loss: {self.oqc_loss} is not a valid option.")
                     
                     msg = f"patch: {i+1}/{self.oqc_mosaic.N_patches}"
                     opt = TNOptimizer(

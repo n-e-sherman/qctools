@@ -32,12 +32,20 @@ class PeakedCircuit(Document):
         self.peak_metrics.append(metric)
         self.update_best_peak_metric()
 
+    def get_qasm(self):
+
+        self.qasm.seek(0)
+        return self.qasm.read().decode("utf-8")
+
     def update_best_peak_metric(self):
 
+        self.best_peak_metric = None # Is this allowed?
         times = [metric.time for metric in self.peak_metrics if metric.peak_found==True]
         if len(times) > 0:
-            i_best = np.argmin(times)
-            self.best_peak_metric = self.peak_metrics[i_best]
+            min_time = np.min(times)
+            for metric in self.peak_metrics:
+                if metric.time == min_time:
+                    self.best_peak_metric = metric
 
     def to_df(self, skips = []):
 

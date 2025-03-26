@@ -192,4 +192,20 @@ class LocalSumTNLoss(TNLoss):
             ind = int(local_target, 2)
             res += torch.abs(rho[ind, ind])
         return -res
+    
+class TraceFidelityTNLoss(TNLoss):
+
+    def __init__(self, target, 
+                 callback_metric: str='loss'
+    ):
+            super().__init__(callback_metric=callback_metric)
+
+            self.target = target
+            self._kwargs = {}
+    
+    def __call__(self, circ: qtn.Circuit):
+         
+        d = 2**(len(self.target.outer_inds())//2)
+        qc_tn = circ.get_uni()
+        return 1.-abs((qc_tn.H & self.target).contract(all, optimize='auto-hq')) / d
             
