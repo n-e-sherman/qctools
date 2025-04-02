@@ -112,7 +112,7 @@ class EchoMosaicCircuitManager(CircuitManager):
         skip_kwargs = ['self', 'frame', 'to_backend', 'to_frontend', 'gate', 'gate_o', 'gate_i', 'gate_e', 'progbar', 'echo_mosaic', 'oqc_mosaic']
         self._kwargs = {key: locals[key] for key in locals if key not in skip_kwargs}
 
-        self.rqc = self.echo_eqc = self.oqc = self.echo_pqc = self.pqc = None
+        self.rqc = self.echo_rqc = self.oqc = self.echo_pqc = self.pqc = None
 
         # build mosaics if not built
         self.echo_build_options = echo_build_options

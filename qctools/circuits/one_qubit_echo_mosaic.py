@@ -61,7 +61,7 @@ class OneQubitEchoMosaicCircuitManager(EchoMosaicCircuitManager):
             if w.lower() == 'oqc':
                 reorder = True
         if reorder:
-            which_list = ['OQC'] + [w for w in which_list if not w == 'OQC']
+            which_list = ['OQC'] + [w for w in which_list if not w.lower() == 'OQC'.lower()]
 
         echo_built = False
         for circ_name in which_list:

@@ -1,6 +1,7 @@
 import copy
 import torch
 import qiskit
+import numpy as np
 import pandas as pd
 import quimb.tensor as qtn
 from typing import Tuple
@@ -164,6 +165,46 @@ def quimb_to_qiskit(qc_quimb: qtn.Circuit) -> qiskit.QuantumCircuit:
             getattr(qc_qiskit, qiskit_label)(*to_end(gate.params), *gate.qubits)
 
         return qc_qiskit
+
+def set_rounds(qc: qtn.Circuit, parametrize: bool=False, round_start: int=0):
+
+    rounds = np.zeros(qc.N) + round_start
+    qc_res = qtn.Circuit(qc.N)
+
+    for gate in qc.gates:
+        qubits = gate.qubits
+        round = np.max(rounds[[qubits]].ravel())
+        for q in qubits:
+            rounds[q] = round + 1
+        qc_res.apply_gate(gate.label, params=gate.params, qubits=gate.qubits, parametrize=parametrize, gate_round=round)
+    return qc_res
+
+def permute_qubits(qc, return_perm=False):
+
+    qc_perm = qtn.Circuit(qc.N)
+    qubits = list(range(qc.N))
+    np.random.shuffle(qubits)
+    perm = {i:q for i,q in enumerate(qubits)}
+
+    for gate in qc.gates:
+        qubits = [perm[q] for q in gate.qubits]
+        qc_perm.apply_gate(gate.label, params=gate.params, qubits=qubits)
+    res = qc_perm
+    if return_perm:
+        res = (qc_perm, perm)
+    return res
+
+def reorder_gates(qc):
+
+    qc_rounded = set_rounds(qc)
+    qc_reordered = qtn.Circuit(qc.N)
+    full_qc_gates = {}
+    for gate in qc_rounded.gates:
+        full_qc_gates[gate.round] = sorted(full_qc_gates.get(gate.round, []) + [gate], key=lambda x: x.qubits[0])
+    rounds = np.sort(list(full_qc_gates))
+    for round in rounds:
+        qc_reordered.apply_gates(full_qc_gates[round])
+    return qc_reordered
 
 class EarlyStopException(Exception):
     """Custom exception to stop optimization early."""

@@ -302,8 +302,58 @@ class Mosaic(ABC):
         ax.spines["right"].set_visible(False)
         ax.spines["left"].set_visible(False)
         ax.spines["bottom"].set_visible(False)
-            
-    
+
+    def draw_wires(self, scale=0.4, x_scale=None, y_scale=None):
+        """
+        Plots a 2D matrix with each unique integer value assigned a distinct color.
+
+        Parameters:
+            matrix (np.ndarray): 2D array of shape (N, T) containing integer values.
+        """
+
+        if x_scale is None:
+            x_scale = np.sqrt(scale)
+        if y_scale is None:
+            y_scale = np.sqrt(scale)
+        x_scale *= scale
+        y_scale *= scale
+        
+        matrix = self.wires
+
+        unique_values = np.unique(matrix)  # Get unique integer values in matrix
+        num_colors = len(unique_values)  # Number of distinct values
+
+        # Define a colormap with distinct colors for each unique value
+        cmap = plt.get_cmap("tab20", num_colors)  # Use categorical colormap
+
+        # Create figure
+        fig, ax = plt.subplots(figsize=(matrix.shape[1] * x_scale, matrix.shape[0] * y_scale))  
+
+        # Use pcolormesh to allow spacing between colors (edges)
+        # mesh = ax.pcolormesh(matrix, cmap=cmap, norm=norm, edgecolors="white", linewidth=0.5)
+        mesh = ax.pcolormesh(matrix, cmap=cmap, edgecolors="white", linewidth=0.5, zorder=1, alpha=0.9)
+
+        # Formatting
+        xs = np.arange(0, matrix.shape[1], 2)
+        ys = np.arange(0, matrix.shape[0], 2)
+
+        ax.set_xticks(xs + 0.5)  # Center tick labels
+        ax.set_yticks(ys + 0.5)
+        ax.set_xticklabels(xs)
+        ax.set_yticklabels(ys)
+
+        ax.set_xlabel("Timestep (T)")
+        ax.set_ylabel("Qubit Index (N)")
+        ax.set_title("Colored Matrix Visualization with Qubit Wires")
+
+        # Add horizontal qubit wire lines
+        for q in range(matrix.shape[0]):
+            ax.hlines(q + 0.5, -0.5, matrix.shape[1]+0.5, color="black", linewidth=1, zorder=0, alpha=0.5)
+        
+
+        plt.show()
+                
+        
     # def _generate_patch_colors(self, N_patches, cmap_name: str="tab20", seaborn_cmap: bool=True):
     #     """
     #     Generates a list of visually distinct colors for N_patches.
