@@ -40,14 +40,21 @@ def cycle_to_transpositions(cycle):
     a = cycle[0]
     return [(a, b) for b in reversed(cycle[1:])]
 
-def permutation_to_transpositions(perm):
+def cycle_to_transpositions_balanced(cycle):
+    """Convert a cycle into transpositions using adjacent pairs."""
+    return [(cycle[i], cycle[i + 1]) for i in reversed(range(len(cycle) - 1))][::-1]
+
+def permutation_to_transpositions(perm, balanced=True):
     """Convert a full permutation (dict) into a list of transpositions."""
     transpositions = []
     for cycle in permutation_to_cycles(perm):
-        transpositions.extend(cycle_to_transpositions(cycle))
+        if balanced:
+            transpositions.extend(cycle_to_transpositions_balanced(cycle))
+        else:
+            transpositions.extend(cycle_to_transpositions(cycle))
     return transpositions
 
-def generate_oqc_patches(N, max_subset):
+def generate_oqc_patches(N, max_subset, balanced=True):
     """
     Given a list of qubit indices, break into subsets and
     return a list of patch specs with local permutations and transpositions.
@@ -72,7 +79,7 @@ def generate_oqc_patches(N, max_subset):
         local_permutation = {i: perm_list[i] for i in range(n)}
 
         # Decompose to transpositions
-        local_transpositions = permutation_to_transpositions(local_permutation)
+        local_transpositions = permutation_to_transpositions(local_permutation, balanced=balanced)
 
         patch = {
             'global_qubits': group,
@@ -120,6 +127,58 @@ def get_prior_patches(patches, wires):
             prior_patch_info[q1] = prior_patch_q1
         prior_patches[patch_id] = prior_patch_info
     return prior_patches
+
+def assign_transpositions_to_two_layers(transpositions, max_attempts=1000):
+    """
+    Assigns transpositions into two disjoint layers.
+    Ensures no qubit appears more than once per layer.
+    Returns any unassigned transpositions due to layer conflicts.
+    
+    Returns:
+        layer1, layer2: lists of (i, j) tuples (disjoint in each layer)
+        unassigned: list of (i, j) transpositions that could not be placed
+    """
+    attempt = 0
+    while True:
+        if attempt == max_attempts:
+            raise RuntimeError(f"was unable to find 2 layers with all transpositions with {max_attempts} attempts")
+        layer1, layer2 = [], []
+        used_1, used_2 = set(), set()
+        unassigned = []
+
+        shuffled = list(transpositions)
+        random.shuffle(shuffled)
+
+        for a, b in shuffled:
+            if a not in used_1 and b not in used_1:
+                layer1.append((a, b))
+                used_1.update([a, b])
+            elif a not in used_2 and b not in used_2:
+                layer2.append((a, b))
+                used_2.update([a, b])
+            else:
+                unassigned.append((a, b))
+        if len(unassigned) == 0:
+            break
+        attempt += 1
+
+    return layer1, layer2
+
+def generate_ansatz_layers(patch):
+
+    trans = patch['local_transpositions'].copy()
+    qubits = list(range(len(patch['global_qubits'])))
+    layer1, layer2 = assign_transpositions_to_two_layers(trans)
+    unassigned_qubits_layer1 = [q for q in qubits if not q in np.array(layer1).ravel()]
+    unassigned_qubits_layer2 = [q for q in qubits if not q in np.array(layer2).ravel()]
+    np.random.shuffle(unassigned_qubits_layer1)
+    np.random.shuffle(unassigned_qubits_layer2)
+    additional_pairs_layer1 = [(unassigned_qubits_layer1[i], unassigned_qubits_layer1[i+1]) for i in range(0, len(unassigned_qubits_layer1)-1, 2)]
+    additional_pairs_layer2 = [(unassigned_qubits_layer2[i], unassigned_qubits_layer2[i+1]) for i in range(0, len(unassigned_qubits_layer2)-1, 2)]
+    full_layer1 = layer1 + additional_pairs_layer1
+    full_layer2 = layer2 + additional_pairs_layer2
+
+    return full_layer1, full_layer2
 
 class AllToAllPermutedOneQubitEchoMosaicCircuitManager(CircuitManager):
 
@@ -392,6 +451,12 @@ class AllToAllPermutedOneQubitEchoMosaicCircuitManager(CircuitManager):
         
         to_end = self._get_to_end(end)
         self.gate_o.set_backend(to_end)
+
+        ansatz_layers = (self.tau_o+1) // 3
+        if 2*ansatz_layers != self.tau_o:
+            warnings.warn(f"tau_o should be divisible by 3, but {self.tau_o} was given. Increasing to {ansatz_layers * 3}")
+            self.tau_o = 3 * ansatz_layers
+            
         
         patches = generate_oqc_patches(self.N, max_subset=self.oqc_max_width)
         self.oqc_patches = patches
@@ -419,18 +484,33 @@ class AllToAllPermutedOneQubitEchoMosaicCircuitManager(CircuitManager):
 
                 # oqc_patch_train
                 # TODO: Rethink how to do this part, probably a more elegant solution
+
                 qc_train = qtn.Circuit(qc_target.N)
-                swap_rounds = [np.random.randint(0, self.tau_o) for _ in patch['local_transpositions']]
-                swap_rounds.sort()
-                for t in range(self.tau_o):
-                    _qubits = list(range(qc_train.N))
-                    random.shuffle(_qubits)
-                    for i in range(0, len(_qubits)-1, 2):
-                        qubits = [_qubits[i], _qubits[i+1]]
-                        qc_train.apply_gate(self.gate_o.name, params=self.gate_o.random_params(), qubits=qubits, parametrize=True, gate_round=t)
-                    for swap_round, swap in zip(swap_rounds, patch['local_transpositions']):
-                        if (swap_round == t) or ((self.tau_o-swap_round == t) and self.oqc_double_swap_round):
-                            qc_train.apply_gate(self.gate_o.name, params=self.gate_o.random_params(), qubits=[*swap], parametrize=True, gate_round=t)
+                all_qubits = list(range(qc_train.N))
+                for t in range(ansatz_layers):
+                    layer1, layer2 = generate_ansatz_layers(patch)
+                    for qubits in layer1:
+                        qc_train.apply_gate(self.gate_o.name, params=self.gate_o.random_params(), qubits=[*qubits], parametrize=True, gate_round=3*t)
+                    for qubits in layer2:
+                        qc_train.apply_gate(self.gate_o.name, params=self.gate_o.random_params(), qubits=[*qubits], parametrize=True, gate_round=3*t+1)
+                    np.random.shuffle(all_qubits)
+                    for i in range(0, len(all_qubits)-1, 2):
+                        qubits = [all_qubits[i], all_qubits[i+1]]
+                        qc_train.apply_gate(self.gate_o.name, params=self.gate_o.random_params(), qubits=[*qubits], parametrize=True, gate_round=3*t+2)
+
+                # qc_train = qtn.Circuit(qc_target.N)
+                # swap_rounds = [np.random.randint(0, self.tau_o) for _ in patch['local_transpositions']]
+                # swap_rounds.sort()
+                # for t in range(self.tau_o):
+                #     _qubits = list(range(qc_train.N))
+                #     random.shuffle(_qubits)
+                #     for i in range(0, len(_qubits)-1, 2):
+                #         qubits = [_qubits[i], _qubits[i+1]]
+                #         qc_train.apply_gate(self.gate_o.name, params=self.gate_o.random_params(), qubits=qubits, parametrize=True, gate_round=t)
+                #     for swap_round, swap in zip(swap_rounds, patch['local_transpositions']):
+                #         if (swap_round == t) or ((self.tau_o-swap_round == t) and self.oqc_double_swap_round):
+                #             qc_train.apply_gate(self.gate_o.name, params=self.gate_o.random_params(), qubits=[*swap], parametrize=True, gate_round=t)
+
                 qc_train.apply_to_arrays(to_end)
 
                 with warnings.catch_warnings():
@@ -462,7 +542,7 @@ class AllToAllPermutedOneQubitEchoMosaicCircuitManager(CircuitManager):
                     if opt.loss < self.oqc_tol:
                         break
                     elif attempt == self.oqc_attempts-1:
-                        raise RuntimeError(f"patch {i+1} in echo_mosaic did not converge in {self.echo_attempts} attempts.")
+                        raise RuntimeError(f"patch {patch_idx+1} in echo_mosaic did not converge in {self.echo_attempts} attempts.")
 
             _full_unitaries = {k: qtn.Gate(gate.label, gate.params, qubits=[patch['local_to_global'][k]], parametrize=False, round=None) for k, gate in unitaries.items()}
             full_unitaries.update({patch['local_to_global'][k]: v for k,v in _full_unitaries.items()})
