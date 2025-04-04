@@ -206,6 +206,24 @@ def reorder_gates(qc):
         qc_reordered.apply_gates(full_qc_gates[round])
     return qc_reordered
 
+def permute_peaked_circuit(qc, target):
+
+    qubits = list(range(qc.N))
+    np.random.shuffle(qubits)
+    perm = {i: q for i, q in enumerate(qubits)}
+    perm_inv = {q: i for i, q in enumerate(qubits)}
+
+    qc_perm = qtn.Circuit(qc.N)
+    for gate in qc.gates:
+        qubits = [perm[q] for q in gate.qubits]
+        qc_perm.apply_gate(gate.label, params=gate.params, qubits=qubits)
+
+    target_perm = ''
+    for i in range(len(target)):
+        target_perm += target[perm_inv[i]]
+
+    return qc_perm, target_perm
+
 class EarlyStopException(Exception):
     """Custom exception to stop optimization early."""
     pass
