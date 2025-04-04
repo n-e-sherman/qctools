@@ -453,7 +453,7 @@ class AllToAllPermutedOneQubitEchoMosaicCircuitManager(CircuitManager):
         self.gate_o.set_backend(to_end)
 
         ansatz_layers = (self.tau_o+1) // 3
-        if 2*ansatz_layers != self.tau_o:
+        if 3*ansatz_layers != self.tau_o:
             warnings.warn(f"tau_o should be divisible by 3, but {self.tau_o} was given. Increasing to {ansatz_layers * 3}")
             self.tau_o = 3 * ansatz_layers
             
@@ -490,13 +490,14 @@ class AllToAllPermutedOneQubitEchoMosaicCircuitManager(CircuitManager):
                 for t in range(ansatz_layers):
                     layer1, layer2 = generate_ansatz_layers(patch)
                     for qubits in layer1:
-                        qc_train.apply_gate(self.gate_o.name, params=self.gate_o.random_params(), qubits=[*qubits], parametrize=True, gate_round=3*t)
+                        qc_train.apply_gate(self.gate_o.name, params=self.gate_o.random_params(), qubits=[*qubits], parametrize=True, gate_round=2*t)
                     for qubits in layer2:
-                        qc_train.apply_gate(self.gate_o.name, params=self.gate_o.random_params(), qubits=[*qubits], parametrize=True, gate_round=3*t+1)
+                        qc_train.apply_gate(self.gate_o.name, params=self.gate_o.random_params(), qubits=[*qubits], parametrize=True, gate_round=2*t+1)
+                for t in range(ansatz_layers):
                     np.random.shuffle(all_qubits)
                     for i in range(0, len(all_qubits)-1, 2):
                         qubits = [all_qubits[i], all_qubits[i+1]]
-                        qc_train.apply_gate(self.gate_o.name, params=self.gate_o.random_params(), qubits=[*qubits], parametrize=True, gate_round=3*t+2)
+                        qc_train.apply_gate(self.gate_o.name, params=self.gate_o.random_params(), qubits=[*qubits], parametrize=True, gate_round=2*ansatz_layers+t)
 
                 # qc_train = qtn.Circuit(qc_target.N)
                 # swap_rounds = [np.random.randint(0, self.tau_o) for _ in patch['local_transpositions']]
