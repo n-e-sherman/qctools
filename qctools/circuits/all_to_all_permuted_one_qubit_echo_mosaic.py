@@ -631,7 +631,7 @@ class AllToAllPermutedOneQubitEchoMosaicCircuitManager(CircuitManager):
         self.pqc.apply_to_arrays(to_end)
 
         for t in range(self.tau_p):
-            for i in range((t+self.tau_r)%2, self.N, 2):
+            for i in range((t+self.tau_r+1)%2, self.N, 2):
                 qubits = [i, (i+1)%self.N]
                 params = self.gate_p.random_params()
                 self.pqc.apply_gate(self.gate_p.name, params=params, qubits=qubits, gate_round=t, parametrize=parametrize)
