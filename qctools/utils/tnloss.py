@@ -183,6 +183,7 @@ class LocalSumTNLoss(TNLoss):
 
         res = torch.zeros(1, device=self.device)
         N = circ.N
+        N_terms = 0
         for i in range(0, N, self.qubits-self.overlap):
             sites = [(i+x)%N for x in range(self.qubits)]
             local_target = ""
@@ -191,7 +192,8 @@ class LocalSumTNLoss(TNLoss):
             rho = circ.partial_trace(sites)
             ind = int(local_target, 2)
             res += torch.abs(rho[ind, ind])
-        return -res
+            N_terms += 1
+        return -res / N_terms
     
 class TraceFidelityTNLoss(TNLoss):
 

@@ -209,6 +209,9 @@ class AllToAllPermutedOneQubitEchoMosaicCircuitManager(CircuitManager):
                  oqc_attempts: int=20,
                  oqc_loss: str='L2',
 
+                 match_rqc_pqc_connectivity: bool=True,
+                 brick_wall_peak: bool=True,
+
                  gauge: bool=True,
                  gauge_inds: Tuple[int]=(0, 0), 
                  alpha_thresh:float=1e-7,
@@ -250,6 +253,9 @@ class AllToAllPermutedOneQubitEchoMosaicCircuitManager(CircuitManager):
         self.oqc_tol = oqc_tol
         self.oqc_attempts = oqc_attempts
         self.oqc_loss = oqc_loss.lower()
+
+        self.match_rqc_pqc_connectivity=match_rqc_pqc_connectivity
+        self.brick_wall_peak=brick_wall_peak
 
         self.gauge=gauge
         self.gauge_inds=gauge_inds
@@ -484,7 +490,6 @@ class AllToAllPermutedOneQubitEchoMosaicCircuitManager(CircuitManager):
 
                 # oqc_patch_train
                 # TODO: Rethink how to do this part, probably a more elegant solution
-
                 qc_train = qtn.Circuit(qc_target.N)
                 all_qubits = list(range(qc_train.N))
                 for t in range(ansatz_layers):
@@ -557,11 +562,15 @@ class AllToAllPermutedOneQubitEchoMosaicCircuitManager(CircuitManager):
         
     def _build_rqc(self, parametrize: bool=False, end: str='back', **kwargs):
 
+        if self.brick_wall_peak:
+            return self._build_brickwall_rqc(parametrize=parametrize, end=end, **kwargs)
+
         to_end = self._get_to_end(end)
         self.gate_r.set_backend(to_end)
 
         self.rqc = qtn.Circuit(self.N, **kwargs)
         self.rqc.apply_to_arrays(to_end)
+
         for d in range(self.tau_r):
             _qubits = list(range(self.N))
             np.random.shuffle(_qubits)
@@ -570,20 +579,62 @@ class AllToAllPermutedOneQubitEchoMosaicCircuitManager(CircuitManager):
                 params = self.gate_r.random_params()
                 self.rqc.apply_gate(self.gate_r.name, params=params, qubits=qubits, gate_round=d, parametrize=parametrize)
 
+    def _build_brickwall_rqc(self, parametrize: bool=False, end: str='back', **kwargs):
+
+        to_end = self._get_to_end(end)
+        self.gate_r.set_backend(to_end)
+
+        self.rqc = qtn.Circuit(self.N, **kwargs)
+        self.rqc.apply_to_arrays(to_end)
+
+        for t in range(self.tau_r):
+            for i in range(t%2, self.N, 2):
+                qubits = [i, (i+1)%self.N]
+                params = self.gate_r.random_params()
+                self.rqc.apply_gate(self.gate_r.name, params=params, qubits=qubits, gate_round=t, parametrize=parametrize)
+
     def _build_pqc(self, parametrize: bool=True, end: str='back', **kwargs):
+
+        if self.brick_wall_peak:
+            return self._build_brickwall_pqc(parametrize=parametrize, end=end, **kwargs)
 
         to_end = self._get_to_end(end)
         self.gate_p.set_backend(to_end)
 
         self.pqc = qtn.Circuit(self.N, **kwargs)
         self.pqc.apply_to_arrays(to_end)
-        for d in range(self.tau_p):
+
+        tau_p = self.tau_p
+        if self.match_rqc_pqc_connectivity and self.rqc is not None:
+            for i, gate in enumerate(self.rqc.gates[::-1]):
+                qubits = gate.qubits
+                params = self.gate_p.random_params()
+                self.pqc.apply_gate(self.gate_p.name, params=params, qubits=qubits, gate_round=i//(self.N//2), parametrize=parametrize)
+            tau_p = 0
+            if self.tau_p > self.tau_r:
+                tau_p = self.tau_p - self.tau_r
+
+        for d in range(tau_p):
             _qubits = list(range(self.N))
             np.random.shuffle(_qubits)
             for i in range(0, len(_qubits)-1, 2):
                 qubits = list(np.sort([_qubits[i], _qubits[i+1]]))
                 params = self.gate_p.random_params()
                 self.pqc.apply_gate(self.gate_p.name, params=params, qubits=qubits, gate_round=d, parametrize=parametrize)
+
+    def _build_brickwall_pqc(self, parametrize: bool=True, end: str='back', **kwargs):
+
+        to_end = self._get_to_end(end)
+        self.gate_p.set_backend(to_end)
+
+        self.pqc = qtn.Circuit(self.N, **kwargs)
+        self.pqc.apply_to_arrays(to_end)
+
+        for t in range(self.tau_p):
+            for i in range((t+self.tau_r)%2, self.N, 2):
+                qubits = [i, (i+1)%self.N]
+                params = self.gate_p.random_params()
+                self.pqc.apply_gate(self.gate_p.name, params=params, qubits=qubits, gate_round=t, parametrize=parametrize)
 
     def _update_progbar_callback(self, opt, postfix_str: str, loss_threshold: float):
         if hasattr(opt, '_pbar') and opt._pbar is not None:
