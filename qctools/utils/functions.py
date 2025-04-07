@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import quimb.tensor as qtn
 from typing import Tuple
+from qiskit import QuantumCircuit, QuantumRegister
 
 from .lambdas import TorchConverter, NumpyConverter
 
@@ -223,9 +224,6 @@ def permute_peaked_circuit(qc, target):
         target_perm += target[perm_inv[i]]
 
     return qc_perm, target_perm
-
-from qiskit import QuantumCircuit, QuantumRegister
-import numpy as np
 
 def permute_peaked_circuit_qiskit(qc, target_bitstring):
     num_qubits = qc.num_qubits
