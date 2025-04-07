@@ -224,6 +224,33 @@ def permute_peaked_circuit(qc, target):
 
     return qc_perm, target_perm
 
+from qiskit import QuantumCircuit, QuantumRegister
+import numpy as np
+
+def permute_peaked_circuit_qiskit(qc, target_bitstring):
+    num_qubits = qc.num_qubits
+    qubit_indices = list(range(num_qubits))
+    np.random.shuffle(qubit_indices)
+
+    # Mapping: old_index → new_index
+    perm = {i: q for i, q in enumerate(qubit_indices)}
+    # Inverse mapping: new_index → old_index
+    perm_inv = {q: i for i, q in enumerate(qubit_indices)}
+
+    # Create a new permuted quantum register and circuit
+    new_qr = QuantumRegister(num_qubits)
+    qc_permuted = QuantumCircuit(new_qr)
+
+    for instr, qargs, cargs in qc.data:
+        # Use find_bit(q) to get the original index
+        permuted_qargs = [new_qr[perm[qc.find_bit(q).index]] for q in qargs]
+        qc_permuted.append(instr, permuted_qargs, cargs)
+
+    # Permute the target bitstring using the inverse map
+    target_perm = ''.join(target_bitstring[perm_inv[i]] for i in range(num_qubits))
+
+    return qc_permuted, target_perm
+
 class EarlyStopException(Exception):
     """Custom exception to stop optimization early."""
     pass
