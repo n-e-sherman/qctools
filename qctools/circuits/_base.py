@@ -96,8 +96,9 @@ class CircuitManager(ABC):
                     new_gate_round += gate_round
                 qc_res.apply_gate(gate.label, params=gate.params, qubits=gate.qubits, 
                                   gate_round=new_gate_round, parametrize=gate.parametrize)
-            if gate.round is not None:
-                gate_round += (gate.round + 1)
+            if len(qc.gates) > 0:
+                if gate.round is not None:
+                    gate_round += (gate.round + 1)
 
         # convert backend
         to_end = self._get_to_end(end)

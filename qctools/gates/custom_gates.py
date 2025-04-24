@@ -60,7 +60,22 @@ class HaarCZGate(OneUOneGGate):
         super().__init__(U1, U2, G12, distribution=distribution, dist_params=dist_params, to_backend=to_backend)
 
         if rename:
-            self._name = 'HAARCZSTACK'
+            self._name = 'HAARCZ'
+            self.register_gate()
+
+class HaarCZHaarGate(TwoUOneGGate):
+
+    def __init__(self, distribution: str="uniform", dist_params: Tuple=[0.0, 2*np.pi], to_backend: Optional[Callable] = None, rename: bool=True):
+
+        U1 = Haar2Gate(distribution=distribution, dist_params=dist_params, to_backend=to_backend)
+        U2 = Haar2Gate(distribution=distribution, dist_params=dist_params, to_backend=to_backend)
+        G12 = CZGate(distribution=distribution, dist_params=dist_params, to_backend=to_backend)
+        U3 = Haar2Gate(distribution=distribution, dist_params=dist_params, to_backend=to_backend)
+        U4 = Haar2Gate(distribution=distribution, dist_params=dist_params, to_backend=to_backend)
+        super().__init__(U1, U2, G12, U3, U4, distribution=distribution, dist_params=dist_params, to_backend=to_backend)
+
+        if rename:
+            self._name = 'HAARCZHAAR'
             self.register_gate()
 
 class HaarCZStackGate(ThreeUTwoGGate):
