@@ -351,6 +351,9 @@ class AllToAllPermutedOneQubitEchoMosaicCircuitManager(CircuitManager):
         for q, patch_id in enumerate(wires[:, -1]):
             gate = unitaries[patch_id][q]
             self.final_unitaries[q] = gate
+        
+        # for testing purposes
+        self.echo_unitaries = unitaries
 
         full_qc_gates = {}
         self.echo_patch_qcs = {}
@@ -463,7 +466,6 @@ class AllToAllPermutedOneQubitEchoMosaicCircuitManager(CircuitManager):
             warnings.warn(f"tau_o should be divisible by 3, but {self.tau_o} was given. Increasing to {ansatz_layers * 3}")
             self.tau_o = 3 * ansatz_layers
             
-        
         patches = generate_oqc_patches(self.N, max_subset=self.oqc_max_width)
         self.oqc_patches = patches
         global_permutation = {}

@@ -4,8 +4,12 @@ import qiskit
 import numpy as np
 import pandas as pd
 import quimb.tensor as qtn
-from typing import Tuple
+from typing import List, Tuple
 from qiskit import QuantumCircuit, QuantumRegister
+from qiskit.quantum_info import Operator
+from qiskit.converters import circuit_to_dag, dag_to_circuit
+from qiskit.dagcircuit.dagnode import DAGOpNode
+from collections import defaultdict
 
 from .lambdas import TorchConverter, NumpyConverter
 
@@ -145,6 +149,21 @@ def qiskit_to_quimb(qc_qiskit, converter = TorchConverter()):
 
     return qc
 
+def qiskit_to_quimb_raw(qc_qiskit, **circuit_args):
+
+    qc_quimb = qtn.Circuit(qc_qiskit.num_qubits, **circuit_args)
+    q_to_i = {q: i for i, q in enumerate(qc_qiskit.qubits)}
+
+    for instruction in qc_qiskit.data:
+        U = Operator(instruction.operation).data
+        qubits = [q_to_i[q] for q in instruction.qubits]
+
+        if len(qubits) == 2:
+            U = U.reshape(2, 2, 2, 2).transpose(1, 0, 3, 2).reshape(4, 4)
+
+        qc_quimb.apply_gate_raw(U, where=qubits)
+    return qc_quimb
+
 def quimb_to_qiskit(qc_quimb: qtn.Circuit) -> qiskit.QuantumCircuit:
         
         QISKIT_TO_QUIMB = {
@@ -248,6 +267,106 @@ def permute_peaked_circuit_qiskit(qc, target_bitstring):
     target_perm = ''.join(target_bitstring[perm_inv[i]] for i in range(num_qubits))
 
     return qc_permuted, target_perm
+
+def fuse_2q_gates_qiskit(circ):
+    dag = circuit_to_dag(circ)
+    new_dag = dag.copy_empty_like()
+
+    qubit_indices = {q: i for i, q in enumerate(circ.qubits)}
+    instructions = list(dag.topological_op_nodes())
+
+    pending_1q = defaultdict(list)  # qubit -> list of pending 1q ops
+    active_blocks = dict()  # (q0, q1) -> list of gates
+
+    def flush_block(pair):
+        block = active_blocks.pop(pair, [])
+        if not block:
+            return
+        q0, q1 = pair
+        index_map = {q0: 0, q1: 1}
+        sub_qc = QuantumCircuit(2)
+        for node in block:
+            sub_qc.append(node.op, [index_map[q] for q in node.qargs])
+        fused_op = Operator(sub_qc)
+        new_dag.apply_operation_back(
+            fused_op.to_instruction(),
+            [q0, q1]
+        )
+
+    def flush_all_blocks():
+        for pair in list(active_blocks):
+            flush_block(pair)
+
+    for node in instructions:
+        qubits = node.qargs
+
+        if node.op.num_qubits == 1:
+            q = qubits[0]
+            found_block = False
+            for (q0, q1) in active_blocks:
+                if q in (q0, q1):
+                    active_blocks[(q0, q1)].append(node)
+                    found_block = True
+                    break
+            if not found_block:
+                pending_1q[q].append(node)
+
+        elif node.op.num_qubits == 2:
+            q0, q1 = sorted(qubits, key=lambda q: qubit_indices[q])
+            pair = (q0, q1)
+
+            # Flush any overlapping blocks that share only one qubit
+            overlapping = [p for p in active_blocks if len(set(p).intersection(pair)) == 1]
+            for p in overlapping:
+                flush_block(p)
+
+            if pair in active_blocks:
+                active_blocks[pair].append(node)
+            else:
+                block = pending_1q[q0] + pending_1q[q1] + [node]
+                pending_1q[q0].clear()
+                pending_1q[q1].clear()
+                active_blocks[pair] = block
+
+        else:
+            flush_all_blocks()
+            new_dag.apply_operation_back(node.op, node.qargs, node.cargs)
+
+    flush_all_blocks()
+
+    # flush any remaining 1Q gates not absorbed
+    for q, ops in pending_1q.items():
+        for node in ops:
+            new_dag.apply_operation_back(node.op, node.qargs, node.cargs)
+
+    return dag_to_circuit(new_dag)
+
+def reverse_bits_statevector(vec, num_qubits):
+    """Reverse bitstrings of statevector indices."""
+    N = len(vec)
+    reversed_vec = np.empty_like(vec)
+    for i in range(N):
+        reversed_index = int(f"{i:0{num_qubits}b}"[::-1], 2)
+        reversed_vec[reversed_index] = vec[i]
+    return reversed_vec
+
+def get_gate_tuples(qc: qtn.Circuit) -> List[Tuple[int]]:
+
+    gates = []
+    for gate in qc.gates:
+        gates.append((*gate.qubits, gate.round))
+    return gates
+
+def trace_metric(qc1, qc2):
+
+    assert qc1.N == qc2.N
+    N = qc1.N
+
+    return abs((qc1.get_uni().H & qc2.get_uni()).contract(all, optimize='auto-hq')) / (2**N)
+
+def overlap_metric(qc1, qc2):
+
+    return abs((qc1.psi.H & qc2.psi).contract(all, optimize='auto-hq'))
 
 class EarlyStopException(Exception):
     """Custom exception to stop optimization early."""
