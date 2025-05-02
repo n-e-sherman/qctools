@@ -4,3 +4,4 @@ from .gate_inversion import GateInversionBaseCircuitManager, GateInversionCircui
 from .one_qubit_echo_mosaic import OneQubitEchoMosaicCircuitManager, get_prior_patches
 # from .enhanced_echo_mosaic import EnhancedEchoMosaicCircuitManager
 from .all_to_all_permuted_one_qubit_echo_mosaic import AllToAllPermutedOneQubitEchoMosaicCircuitManager
+from .heavyhex_echo_mosaic import HeavyHexEchoMosaicCircuitManager
