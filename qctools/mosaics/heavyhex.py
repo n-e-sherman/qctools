@@ -74,7 +74,7 @@ class HeavyHexMosaic(Mosaic):
                     self.wires[qubits[0], t] = self.unassigned_id
                     self.wires[qubits[1], t] = self.unassigned_id
                     self.all_bricks.append((*qubits, t))
-                t += _t
+                t += 1
 
         self.unassigned_bricks = set(copy.deepcopy(self.all_bricks))
         self.patches = {}
