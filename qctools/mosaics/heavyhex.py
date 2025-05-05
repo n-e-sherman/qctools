@@ -180,6 +180,9 @@ class HeavyHexMosaic(Mosaic):
         degrees = dict(G.degree)
         num_nodes = len(G.nodes)
 
+        best_layer1, best_layer2 = set(), set()
+        best_bond_count = 0
+
         for trial in range(max_trials):
             layer1, layer2 = set(), set()
             used1, used2 = set(), set()
@@ -200,9 +203,18 @@ class HeavyHexMosaic(Mosaic):
                         used2.update(edge)
                     assigned_edges.add(edge)
 
-            # Step 2: process remaining edges (including z=3) in random order
+            # Step 2: prioritize z=3 nodes with fewest available edges first
             remaining_edges = [e for e in G.edges if tuple(sorted(e)) not in assigned_edges]
-            random.shuffle(remaining_edges)
+            edge_priority = []
+
+            for edge in remaining_edges:
+                u, v = edge
+                score = degrees[u] + degrees[v]  # Prefer lower degree nodes first
+                edge_priority.append((score, edge))
+
+            edge_priority.sort()  # Lowest score = highest priority
+            remaining_edges = [e for _, e in edge_priority]
+            random.shuffle(remaining_edges)  # Add some randomness still
 
             for u, v in remaining_edges:
                 edge = tuple(sorted((u, v)))
@@ -216,13 +228,75 @@ class HeavyHexMosaic(Mosaic):
                     layer2.add(edge)
                     used2.update(edge)
                     assigned_edges.add(edge)
-                # If neither is assignable, skip it
 
-            covered_nodes = used1.union(used2)
-            if len(covered_nodes) == num_nodes:
-                return layer1, layer2
+            # Evaluate total bonds placed
+            total_bonds = len(layer1) + len(layer2)
 
-        raise RuntimeError(f"Failed to cover all qubits after {max_trials} trials.")
+            # Keep best covering found
+            if total_bonds > best_bond_count:
+                covered_nodes = used1.union(used2)
+                if len(covered_nodes) == num_nodes:
+                    best_layer1 = layer1.copy()
+                    best_layer2 = layer2.copy()
+                    best_bond_count = total_bonds
+
+        if best_bond_count == 0:
+            raise RuntimeError(f"Failed to cover all qubits after {max_trials} trials.")
+
+        return best_layer1, best_layer2
+
+
+    # @classmethod
+    # def generate_2layer_covering(cls, G, seed=None, max_trials=1000):
+    #     if seed is not None:
+    #         random.seed(seed)
+
+    #     degrees = dict(G.degree)
+    #     num_nodes = len(G.nodes)
+
+    #     for trial in range(max_trials):
+    #         layer1, layer2 = set(), set()
+    #         used1, used2 = set(), set()
+    #         assigned_edges = set()
+
+    #         # Step 1: randomly assign spoke bonds
+    #         for node in G.nodes:
+    #             if degrees[node] == 1:
+    #                 neighbor = next(G.neighbors(node))
+    #                 edge = tuple(sorted((node, neighbor)))
+    #                 if edge in assigned_edges:
+    #                     continue
+    #                 if random.random() < 0.5:
+    #                     layer1.add(edge)
+    #                     used1.update(edge)
+    #                 else:
+    #                     layer2.add(edge)
+    #                     used2.update(edge)
+    #                 assigned_edges.add(edge)
+
+    #         # Step 2: process remaining edges (including z=3) in random order
+    #         remaining_edges = [e for e in G.edges if tuple(sorted(e)) not in assigned_edges]
+    #         random.shuffle(remaining_edges)
+
+    #         for u, v in remaining_edges:
+    #             edge = tuple(sorted((u, v)))
+    #             if edge in assigned_edges:
+    #                 continue
+    #             if u not in used1 and v not in used1:
+    #                 layer1.add(edge)
+    #                 used1.update(edge)
+    #                 assigned_edges.add(edge)
+    #             elif u not in used2 and v not in used2:
+    #                 layer2.add(edge)
+    #                 used2.update(edge)
+    #                 assigned_edges.add(edge)
+    #             # If neither is assignable, skip it
+
+    #         covered_nodes = used1.union(used2)
+    #         if len(covered_nodes) == num_nodes:
+    #             return layer1, layer2
+
+    #     raise RuntimeError(f"Failed to cover all qubits after {max_trials} trials.")
     
     @classmethod
     def generate_3layer_covering(cls, G, seed=None, max_trials=1000):
