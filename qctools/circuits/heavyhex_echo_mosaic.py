@@ -335,6 +335,7 @@ class HeavyHexEchoMosaicCircuitManager(CircuitManager):
 
         res = {
             **self._kwargs,
+            'N': self.N,
             'gate': self.gate.name,
             'gate_class': self.gate.__class__.__name__,
             'gate_r': self.gate_r.name,
