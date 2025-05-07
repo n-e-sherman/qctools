@@ -1,3 +1,4 @@
+import inspect
 import numpy as np
 import quimb.tensor as qtn
 
@@ -33,6 +34,16 @@ class SimpleDeformationSweeper(DeformationSweeper):
         self.shift_last_patch = shift_last_patch
         self.early_stopping = early_stopping
 
+        frame = inspect.currentframe()
+        args, vargs, varkw, locals = inspect.getargvalues(frame)
+        skip_kwargs = ['self', 'to_backend', 'progbar', 'opt_args',  '_noise_func', 'frame']
+        self._kwargs = {key: locals[key] for key in locals if key not in skip_kwargs}
+        self._kwargs.update(opt_args)
+
+    def get_log_params(self):
+
+        return self._kwargs
+
     def get_schedule(self, qc_full: qtn.Circuit) -> List[Dict[Any, Any]]:
         
         all_rounds = list(set([gate.round for gate in qc_full.gates]))
@@ -56,7 +67,6 @@ class SimpleDeformationSweeper(DeformationSweeper):
         sweep_schedule.append(patch_args)
 
         return sweep_schedule
-
 
     def get_patch_target(self, qc: qtn.Circuit, round_start: int=0, depth: int=4) -> qtn.Circuit:
 
