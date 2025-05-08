@@ -63,6 +63,11 @@ class PeakedCircuit(Document):
 
         self.qasm.seek(0)
         return self.qasm.read().decode("utf-8")
+    
+    def get_qc(self):
+
+        qasm = self.get_qasm()
+        return qiskit.QuantumCircuit.from_qasm_str(qasm)
 
     def update_best_peak_metric(self):
 
