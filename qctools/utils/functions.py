@@ -171,7 +171,7 @@ def quimb_to_qiskit(qc_quimb: qtn.Circuit) -> qiskit.QuantumCircuit:
             'x': 'X',
             'sx': 'X_1_2',
             'rz': 'RZ',
-            'u3': 'U3',
+            'u': 'U3',
             'cx': 'CX'
         }
         QUIMB_TO_QISKIT = {v:k for k,v in QISKIT_TO_QUIMB.items()}
