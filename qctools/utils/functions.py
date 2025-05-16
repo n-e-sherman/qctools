@@ -192,9 +192,7 @@ def quimb_to_qiskit(qc_quimb: qtn.Circuit) -> qiskit.QuantumCircuit:
                     U = gate.array
                 U = U.reshape(int(np.sqrt(len(U.ravel()))), -1)
                 ugate = UnitaryGate(to_end(U), label='SU4')
-                qc_qiskit.append(ugate, gate.qubits)
-                
-                 
+                qc_qiskit.append(ugate, gate.qubits[::-1])
 
         return qc_qiskit
 
