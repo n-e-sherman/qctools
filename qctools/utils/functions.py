@@ -6,6 +6,7 @@ import pandas as pd
 import quimb.tensor as qtn
 from typing import List, Tuple
 from qiskit import QuantumCircuit, QuantumRegister
+from qiskit.circuit.library import UnitaryGate
 from qiskit.quantum_info import Operator
 from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit.dagcircuit.dagnode import DAGOpNode
@@ -182,7 +183,18 @@ def quimb_to_qiskit(qc_quimb: qtn.Circuit) -> qiskit.QuantumCircuit:
         for gate in qc_quimb.gates:
             label = gate.label
             qiskit_label = QUIMB_TO_QISKIT.get(label, label.upper())
-            getattr(qc_qiskit, qiskit_label)(*to_end(gate.params), *gate.qubits)
+            try:
+                getattr(qc_qiskit, qiskit_label)(*to_end(gate.params), *gate.qubits)
+            except AttributeError: # use raw matrix
+                if gate.parametrize:
+                    U = gate.array.data
+                else:
+                    U = gate.array
+                U = U.reshape(int(np.sqrt(len(U.ravel()))), -1)
+                ugate = UnitaryGate(to_end(U), label='SU4')
+                qc_qiskit.append(ugate, gate.qubits)
+                
+                 
 
         return qc_qiskit
 
